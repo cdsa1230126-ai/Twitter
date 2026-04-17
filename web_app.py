@@ -31,14 +31,12 @@ if not st.session_state.logged_in:
     tab1, tab2 = st.tabs(["ログイン", "アカウント作成"])
 
     with tab1:
-        # ログインフォーム
         with st.form("login_form"):
             st.markdown("### ログイン")
             email = st.text_input("メールアドレス", key="login_email")
             password = st.text_input("パスワード", type="password", key="login_pass")
             if st.form_submit_button("ログイン"):
                 try:
-                    # アカウントが存在するか確認
                     user = auth.get_user_by_email(email)
                     st.session_state.logged_in = True
                     st.session_state.user_email = email
@@ -46,11 +44,9 @@ if not st.session_state.logged_in:
                     st.session_state.user_name = user.display_name
                     st.rerun()
                 except:
-                    st.error("ログイン失敗。メールアドレスが登録されていない可能性があります。")
+                    st.error("ログイン失敗。メールアドレスを確認してください。")
 
     with tab2:
-        # アカウント作成フォーム
-        # ブラウザの自動生成機能を誘発するためにメールとパスワードを上に配置
         with st.form("signup_form"):
             st.markdown("### 新規登録")
             new_email = st.text_input("メールアドレス（IDになります）", key="signup_email")
@@ -61,7 +57,7 @@ if not st.session_state.logged_in:
                 help="Googleのパスワード自動生成も利用可能です。"
             )
             
-            st.divider() # 視覚的な区切り
+            st.divider()
             
             display_name = st.text_input("表示名（ニックネーム）", placeholder="例：たなか")
             avatar_choice = st.selectbox(
@@ -76,13 +72,11 @@ if not st.session_state.logged_in:
                     st.error("表示名を入力してください。")
                 else:
                     try:
-                        # 1. Firebase Authにユーザー作成
                         user = auth.create_user(
                             email=new_email, 
                             password=new_pass, 
                             display_name=display_name
                         )
-                        # 2. Firestoreにユーザー固有情報を保存
                         db.collection("users").document(user.uid).set({
                             "display_name": display_name,
                             "avatar": avatar_choice
@@ -95,9 +89,22 @@ if not st.session_state.logged_in:
 # --- 4. ログイン後のメイン画面 ---
 st.title("𝕏 クローン (iwitter)")
 
-# サイドバーにユーザー情報表示
+# サイドバーにユーザー情報表示（エラー対策版）
 st.sidebar.title("プロフィール")
-st.sidebar.markdown(f"## {db.collection('users').document(st.session_state.user_id).get().to_dict().get('avatar', '👤')}")
+
+# Firestoreからユーザーデータを安全に取得
+try:
+    user_doc = db.collection('users').document(st.session_state.user_id).get()
+    if user_doc.exists:
+        user_data = user_doc.to_dict()
+        avatar = user_data.get('avatar', '👤')
+    else:
+        # 古いアカウントなどでFirestoreにデータがない場合
+        avatar = '👤'
+except:
+    avatar = '👤'
+
+st.sidebar.markdown(f"## {avatar}")
 st.sidebar.write(f"ユーザー名: **{st.session_state.user_name}**")
 if st.sidebar.button("ログアウト"):
     st.session_state.logged_in = False
@@ -106,18 +113,18 @@ if st.sidebar.button("ログアウト"):
 # 投稿フォーム
 st.subheader("いまどうしてる？")
 with st.form("tweet_form", clear_on_submit=True):
-    content = st.text_area("内容を入力してください", max_chars=140, placeholder="今日はどんな日だった？")
+    content = st.text_area("内容を入力してください", max_chars=140)
     if st.form_submit_button("ツイートする"):
         if content.strip():
-            # Firestoreから最新のアイコン情報を取得して投稿に含める
+            # 投稿時も最新のアイコンを安全に取得
             user_doc = db.collection("users").document(st.session_state.user_id).get()
-            avatar = user_doc.to_dict().get("avatar", "👤") if user_doc.exists else "👤"
+            current_avatar = user_doc.to_dict().get("avatar", "👤") if user_doc.exists else "👤"
             
             db.collection("tweets").add({
                 "text": content,
                 "user_name": st.session_state.user_name,
                 "user_id": st.session_state.user_id,
-                "avatar": avatar,
+                "avatar": current_avatar,
                 "created_at": firestore.SERVER_TIMESTAMP
             })
             st.rerun()
@@ -131,9 +138,7 @@ def show_timeline():
     try:
         tweets = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING).limit(20).stream()
         
-        count = 0
         for tweet in tweets:
-            count += 1
             data = tweet.to_dict()
             with st.container(border=True):
                 col1, col2 = st.columns([1, 10])
@@ -145,9 +150,6 @@ def show_timeline():
                     ts = data.get('created_at')
                     if ts:
                         st.caption(f"🕒 {ts.strftime('%H:%M:%S')}")
-        
-        if count == 0:
-            st.info("まだ投稿がありません。")
             
     except Exception as e:
         st.error(f"読み込みエラー: {e}")
