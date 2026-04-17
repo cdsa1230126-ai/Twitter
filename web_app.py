@@ -87,7 +87,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # --- 4. ログイン後のメイン画面 ---
-st.title("𝕏 クローン (iwitter)")
+st.title("iwitter")
 
 # サイドバーにユーザー情報表示（エラー対策版）
 st.sidebar.title("プロフィール")
