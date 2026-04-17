@@ -4,7 +4,7 @@ from firebase_admin import credentials, firestore, auth
 import json
 
 # --- 設定：ここを自分のメールアドレスに変えてください ---
-ADMIN_EMAIL = "your-email@example.com" 
+ADMIN_EMAIL = "	cdsa1230126@gn.iwasaki.ac.jp" 
 
 st.set_page_config(page_title="iwitter", page_icon="𝕏")
 
