@@ -8,23 +8,23 @@ import pytz
 # ページ設定
 st.set_page_config(page_title="iwitter - Firebase AI Edition", layout="wide")
 
-# --- 1. Firebase初期化 (超強力・自動掃除版) ---
+# --- 1. Firebase初期化 (究極の洗浄版) ---
 if not firebase_admin._apps:
     try:
         if "firebase" not in st.secrets:
             st.error("Secretsに [firebase] セクションが見つかりません。")
             st.stop()
             
-        # Secretsから辞書をコピー
         fb_creds = dict(st.secrets["firebase"])
         
         if "private_key" in fb_creds:
-            # 1. まず文字列の前後にある目に見えないスペースや改行を完全に除去
-            pk = fb_creds["private_key"].strip()
-            # 2. \n という文字を実際の改行に変換
+            pk = fb_creds["private_key"]
+            # 全体の前後にある空白・改行を除去
+            pk = pk.strip()
+            # 万が一1行形式の \n が混ざっていたら本物の改行に置換
             pk = pk.replace("\\n", "\n")
-            # 3. もし引用符などが紛れ込んでいたら除去
-            pk = pk.strip('"').strip("'")
+            # 重複した改行や変な空白を掃除
+            pk = "\n".join([line.strip() for line in pk.splitlines() if line.strip()])
             
             fb_creds["private_key"] = pk
         
@@ -32,10 +32,9 @@ if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
     except Exception as e:
         st.error(f"Firebaseの初期化に失敗しました。\nエラー詳細: {e}")
-        # 詳細なデバッグ情報を表示（解決したら消します）
-        st.write("デバッグ情報: 鍵の長さは", len(fb_creds.get("private_key", "")))
+        # デバッグ用：問題がある場合は鍵の「最初」と「最後」を表示して確認
+        # st.code(f"START: {fb_creds.get('private_key','')[:20]}... END: {fb_creds.get('private_key','')[-20:]}")
         st.stop()
-
 db = firestore.client()
 
 # --- 2. Groq AI初期化 ---
