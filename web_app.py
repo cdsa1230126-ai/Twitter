@@ -1,51 +1,16 @@
-import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
-import re
+# 秘密鍵の洗浄：これであらゆる形式（改行混じり、1行、ヒアドキュメント）に対応します
+raw_key = fb_sec["private_key"]
 
-# --- ここから初期化処理 ---
-if not firebase_admin._apps:
-    try:
-        # Secretsから取得
-        fb_sec = st.secrets["firebase"]
-        
-        # 1. 各項目の前後の空白を徹底排除
-        parts = [p.strip() for p in fb_sec["raw_data"].split(",")]
-        
-        # 2. 秘密鍵の洗浄（改行を排除して1行にまとめる）
-        raw_key = fb_sec["private_key"]
-        # ヘッダー、フッター、改行、空白をすべて削除
-        pure_key = re.sub(r"-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|[\s\n\r]", "", raw_key)
-        
-        # 3. Googleが認識できる正しい形式に再構成
-        fixed_key = f"-----BEGIN PRIVATE KEY-----\n{pure_key}\n-----END PRIVATE KEY-----\n"
-        
-        # 4. 認証情報ディクショナリの作成
-        info_dict = {
-            "type": "service_account",
-            "project_id": parts[0],
-            "private_key_id": parts[1],
-            "private_key": fixed_key,
-            "client_email": parts[2],
-            "client_id": parts[3],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{parts[2]}",
-            "universe_domain": "googleapis.com"
-        }
-        
-        # 5. Firebase初期化
-        cred = credentials.Certificate(info_dict)
-        firebase_admin.initialize_app(cred)
-        st.success("Firebaseの初期化に成功しました！")
+# 1. まず「実際の改行文字」や「エスケープされた改行(\\n)」をすべてスペースに置換
+clean_key = raw_key.replace("\\n", "\n")
 
-    except Exception as e:
-        st.error(f"初期化失敗: {e}")
-        st.stop()
+# 2. ヘッダーとフッターを一旦取り除く
+inner_key = clean_key.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "")
 
-# DBクライアントの作成
-db = firestore.client()
+# 3. 中身から「改行」「スペース」「タブ」を完全に排除
+pure_base64 = "".join(inner_key.split())
 
-# --- 動作確認用テスト ---
-st.write("Firestoreへの接続準備が整いました。")
+# 4. Googleが求める「64文字ごとの改行」形式に再構築
+import textwrap
+formatted_body = "\n".join(textwrap.wrap(pure_base64, 64))
+final_key = f"-----BEGIN PRIVATE KEY-----\n{formatted_body}\n-----END PRIVATE KEY-----\n"
