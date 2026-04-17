@@ -1,20 +1,29 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
-import json
 
 if not firebase_admin._apps:
     try:
-        # Secretsから文字列を取得
-        info_json = st.secrets["firebase"]["info"]
+        fb_sec = st.secrets["firebase"]
         
-        # JSON辞書に変換
-        info_dict = json.loads(info_json)
+        # カンマ区切りの文字列をリストに戻す
+        parts = fb_sec["raw_data"].split(",")
         
-        # 秘密鍵内の \n 文字を実際の改行に置換
-        info_dict["private_key"] = info_dict["private_key"].replace("\\n", "\n")
+        # 辞書を再構成（プログラムが手動で組み立てるので、TOMLのパースエラーが起きません）
+        info_dict = {
+            "type": "service_account",
+            "project_id": parts[0],
+            "private_key_id": parts[1],
+            "private_key": fb_sec["private_key"],
+            "client_email": parts[2],
+            "client_id": parts[3],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{parts[2]}",
+            "universe_domain": "googleapis.com"
+        }
         
-        # Firebase初期化
         cred = credentials.Certificate(info_dict)
         firebase_admin.initialize_app(cred)
         
@@ -23,4 +32,4 @@ if not firebase_admin._apps:
         st.stop()
 
 db = firestore.client()
-st.success("🎉 おめでとうございます！ついに接続できました！")
+st.success("🏆 やりました！ついに、ついに成功です！")
