@@ -1,17 +1,21 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
+import textwrap
 
 if not firebase_admin._apps:
     try:
         fb_cfg = st.secrets["firebase"]
         
-        # 記号のない英数字の塊を読み込む
+        # 1. 英数字だけの塊を取得
         pure_data = fb_cfg["private_key_pure"]
         
-        # Python側で、確実に正しいPEM形式（改行付き）に組み立てる
-        # これにより、Secretsの記号解釈トラブルを100%回避します
-        formatted_key = "-----BEGIN PRIVATE KEY-----\n" + pure_data + "\n-----END PRIVATE KEY-----"
+        # 2. 秘密鍵を正しいPEM形式に整形（ここが重要！）
+        # RSA鍵のルールに従い、64文字ごとに本物の改行を入れます
+        wrapped_data = "\n".join(textwrap.wrap(pure_data, 64))
+        
+        # 3. 前後のヘッダー・フッターを合体
+        formatted_key = f"-----BEGIN PRIVATE KEY-----\n{wrapped_data}\n-----END PRIVATE KEY-----\n"
 
         fb_creds = {
             "type": "service_account",
@@ -34,6 +38,7 @@ if not firebase_admin._apps:
         st.error(f"初期化失敗: {e}")
         st.stop()
 
+# --- 接続成功メッセージ ---
 db = firestore.client()
-st.title("🎉 根本解決！")
-st.success("記号トラブルを回避して接続に成功しました。")
+st.title("🏆 ついに完全勝利です！")
+st.success("鍵の整形（64文字改行ルール）をクリアし、接続に成功しました！")
