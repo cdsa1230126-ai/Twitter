@@ -111,7 +111,7 @@ with main_col:
         if st.session_state.get('is_admin_user') and st.session_state.get('admin_mode_on'):
             with st.expander("📂 【管理者限定】スプレッドシート(CSV)から一括登録"):
                 st.write("A列:ID, B列:ゼミ名, C列:教員... の順のCSVをアップロードしてください。")
-                csv_file = st.file_uploader("CSVファイルを選択", type="csv")
+                csv_file = st.file_uploader("ファイルを選択 (.csv または .xlsx)", type=["csv", "xlsx"])
                 
                 if st.button("一括登録を実行"):
                     if csv_file is not None:
