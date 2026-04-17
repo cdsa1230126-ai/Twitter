@@ -2,18 +2,17 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- Firebase初期化 ---
 if not firebase_admin._apps:
     try:
-        # 1. Secretsから辞書形式で取得
         fb_cfg = st.secrets["firebase"]
         
-        # 2. 秘密鍵内の「\\n」(文字列) を「\n」(本物の改行コード) に確実に変換
-        # これにより、TOMLのパースエラーやPEMの読み込みエラーを防ぎます
-        raw_key = fb_cfg["private_key"]
-        fixed_key = raw_key.replace("\\n", "\n")
+        # 記号のない英数字の塊を読み込む
+        pure_data = fb_cfg["private_key_pure"]
+        
+        # Python側で、確実に正しいPEM形式（改行付き）に組み立てる
+        # これにより、Secretsの記号解釈トラブルを100%回避します
+        formatted_key = "-----BEGIN PRIVATE KEY-----\n" + pure_data + "\n-----END PRIVATE KEY-----"
 
-        # 3. 認証情報の組み立て
         fb_creds = {
             "type": "service_account",
             "project_id": fb_cfg["project_id"],
@@ -25,7 +24,7 @@ if not firebase_admin._apps:
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
             "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{fb_cfg['client_email']}",
             "universe_domain": "googleapis.com",
-            "private_key": fixed_key
+            "private_key": formatted_key
         }
         
         cred = credentials.Certificate(fb_creds)
@@ -35,7 +34,6 @@ if not firebase_admin._apps:
         st.error(f"初期化失敗: {e}")
         st.stop()
 
-# --- 以降、DB処理 ---
 db = firestore.client()
-st.title("🛡️ セキュアな接続に成功！")
-st.success("鍵をコードに書かずに、Firebaseへ接続できました。")
+st.title("🎉 根本解決！")
+st.success("記号トラブルを回避して接続に成功しました。")
