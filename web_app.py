@@ -27,7 +27,7 @@ if "logged_in" not in st.session_state:
 
 # --- 3. ログイン・サインアップ画面 ---
 if not st.session_state.logged_in:
-    st.title("iwitter")
+    st.title("𝕏 iwitter (Firebase Auth)")
     tab1, tab2 = st.tabs(["ログイン", "アカウント作成"])
 
     with tab1:
@@ -50,20 +50,12 @@ if not st.session_state.logged_in:
         with st.form("signup_form"):
             st.markdown("### 新規登録")
             new_email = st.text_input("メールアドレス（IDになります）", key="signup_email")
-            new_pass = st.text_input(
-                "パスワード（6文字以上）", 
-                type="password", 
-                key="signup_pass",
-                help="Googleのパスワード自動生成も利用可能です。"
-            )
+            new_pass = st.text_input("パスワード（6文字以上）", type="password", key="signup_pass", help="Googleの自動生成も使えます")
             
             st.divider()
             
-            display_name = st.text_input("表示名（ニックネーム）", placeholder="例：たなか")
-            avatar_choice = st.selectbox(
-                "アイコンを選択", 
-                ["🐱", "🐶", "🦊", "🐻", "🐼", "🤖", "🚀", "🌈", "🐥", "👻"]
-            )
+            display_name = st.text_input("表示名（ニックネーム）")
+            avatar_choice = st.selectbox("アイコンを選択", ["🐱", "🐶", "🦊", "🐻", "🐼", "🤖", "🚀", "🌈", "🐥", "👻"])
             
             if st.form_submit_button("アカウントを作成する"):
                 if len(new_pass) < 6:
@@ -72,35 +64,24 @@ if not st.session_state.logged_in:
                     st.error("表示名を入力してください。")
                 else:
                     try:
-                        user = auth.create_user(
-                            email=new_email, 
-                            password=new_pass, 
-                            display_name=display_name
-                        )
+                        user = auth.create_user(email=new_email, password=new_pass, display_name=display_name)
                         db.collection("users").document(user.uid).set({
                             "display_name": display_name,
                             "avatar": avatar_choice
                         })
-                        st.success("作成に成功しました！『ログイン』タブからログインしてください。")
+                        st.success("作成成功！ログインしてください。")
                     except Exception as e:
                         st.error(f"作成失敗: {e}")
     st.stop()
 
 # --- 4. ログイン後のメイン画面 ---
-st.title("iwitter")
+st.title("𝕏 クローン (iwitter)")
 
-# サイドバーにユーザー情報表示（エラー対策版）
+# サイドバー設定
 st.sidebar.title("プロフィール")
-
-# Firestoreからユーザーデータを安全に取得
 try:
     user_doc = db.collection('users').document(st.session_state.user_id).get()
-    if user_doc.exists:
-        user_data = user_doc.to_dict()
-        avatar = user_data.get('avatar', '👤')
-    else:
-        # 古いアカウントなどでFirestoreにデータがない場合
-        avatar = '👤'
+    avatar = user_doc.to_dict().get('avatar', '👤') if user_doc.exists else '👤'
 except:
     avatar = '👤'
 
@@ -116,7 +97,6 @@ with st.form("tweet_form", clear_on_submit=True):
     content = st.text_area("内容を入力してください", max_chars=140)
     if st.form_submit_button("ツイートする"):
         if content.strip():
-            # 投稿時も最新のアイコンを安全に取得
             user_doc = db.collection("users").document(st.session_state.user_id).get()
             current_avatar = user_doc.to_dict().get("avatar", "👤") if user_doc.exists else "👤"
             
@@ -136,10 +116,13 @@ st.subheader("最新の投稿")
 @st.fragment(run_every=5)
 def show_timeline():
     try:
+        # 最新20件を取得
         tweets = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING).limit(20).stream()
         
         for tweet in tweets:
             data = tweet.to_dict()
+            tweet_id = tweet.id  # 削除に使うドキュメントID
+            
             with st.container(border=True):
                 col1, col2 = st.columns([1, 10])
                 with col1:
@@ -147,9 +130,21 @@ def show_timeline():
                 with col2:
                     st.markdown(f"**{data.get('user_name', '不明')}**")
                     st.write(data.get('text', ''))
-                    ts = data.get('created_at')
-                    if ts:
-                        st.caption(f"🕒 {ts.strftime('%H:%M:%S')}")
+                    
+                    # 下部のレイアウト（時間と削除ボタン）
+                    foot1, foot2 = st.columns([2, 1])
+                    with foot1:
+                        ts = data.get('created_at')
+                        if ts:
+                            st.caption(f"🕒 {ts.strftime('%H:%M:%S')}")
+                    
+                    with foot2:
+                        # 投稿主IDが、現在ログイン中のIDと一致する場合のみ削除ボタンを表示
+                        if data.get('user_id') == st.session_state.user_id:
+                            # ボタンを右寄せにするために小細工なしでシンプルに設置
+                            if st.button("🗑️ 削除", key=f"del_{tweet_id}"):
+                                db.collection("tweets").document(tweet_id).delete()
+                                st.rerun()
             
     except Exception as e:
         st.error(f"読み込みエラー: {e}")
