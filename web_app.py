@@ -1,75 +1,69 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
-import pandas as pd
+import firebase_admin
+from firebase_admin import credentials, firestore
 from groq import Groq
 from datetime import datetime
-import traceback
+import pytz
 
 # ページ設定
-st.set_page_config(page_title="SNSデバッグモード", layout="wide")
+st.set_page_config(page_title="iwitter - Firebase Edition", layout="wide")
 
-# --- 1. 接続設定 ---
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-    SHEET_URL = st.secrets["connections"]["gsheets"]["spreadsheet"]
-except Exception as e:
-    st.error("Secretsの設定読み込みでエラーが発生しました。")
-    st.code(traceback.format_exc())
-    st.stop()
-
-# --- 2. データの読み込み関数（デバッグ版） ---
-def fetch_data():
+# --- 1. Firebase初期化 ---
+if not firebase_admin._apps:
     try:
-        # 取得を試みる
-        return conn.read(spreadsheet=SHEET_URL, ttl="0s")
+        fb_credentials = dict(st.secrets["firebase"])
+        cred = credentials.Certificate(fb_credentials)
+        firebase_admin.initialize_app(cred)
     except Exception as e:
-        # 失敗したら詳細を表示する
-        st.error("🚨 【エラー詳細】スプレッドシートの読み込みに失敗しました")
-        st.warning("以下のメッセージを教えてください：")
-        st.code(str(e)) # エラーメッセージ本体
-        st.info("スタックトレース（技術的な詳細）:")
-        st.code(traceback.format_exc())
+        st.error(f"Firebaseの初期化に失敗しました: {e}")
         st.stop()
 
-# 実行
-df = fetch_data()
+db = firestore.client()
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+tokyo_tz = pytz.timezone('Asia/Tokyo')
 
-# --- 3. メイン画面 ---
-st.title("𝕏 学内共有タイムライン")
-st.success("✅ データの読み込みに成功しました！")
+# --- 2. タイムライン表示エリア ---
+st.title("𝕏 iwitter (Firebase)")
+
+with st.sidebar:
+    st.header("🤖 AI Assistant")
+    ai_query = st.text_input("AIに質問")
+    if st.button("聞く") and ai_query:
+        chat_completion = client.chat.completions.create(
+            messages=[{"role": "user", "content": ai_query}],
+            model="llama-3.3-70b-versatile",
+        )
+        st.write(chat_completion.choices[0].message.content)
 
 # 投稿フォーム
 with st.expander("いまどうしてる？", expanded=True):
-    user_name = st.text_input("名前", value="ゲストユーザー")
-    tweet_text = st.text_area("内容を入力...")
-    
-    if st.button("投稿する"):
-        if tweet_text:
-            try:
-                new_post = pd.DataFrame([{
-                    "user": user_name,
-                    "text": tweet_text,
-                    "time": datetime.now().strftime("%m/%d %H:%M")
-                }])
-                updated_df = pd.concat([df, new_post], ignore_index=True)
-                
-                # 保存の実行
-                conn.update(spreadsheet=SHEET_URL, data=updated_df)
-                st.success("保存完了！")
-                st.rerun()
-            except Exception as e:
-                st.error("保存中にエラーが発生しました。")
-                st.code(str(e))
+    name = st.text_input("名前", value="ゲスト")
+    content = st.text_area("内容")
+    if st.button("投稿"):
+        if content:
+            # Firestoreにデータを追加
+            doc_ref = db.collection("posts").document()
+            doc_ref.set({
+                "user": name,
+                "text": content,
+                "time": datetime.now(tokyo_tz)
+            })
+            st.success("投稿しました！")
+            st.rerun()
 
 st.divider()
 
-# タイムライン表示
-if not df.empty:
-    for index, row in df.iloc[::-1].iterrows():
-        st.markdown(f"""
-            <div style="border:1px solid #ddd; border-radius:10px; padding:15px; margin-bottom:10px; background-color: white;">
-                <b>{row['user']}</b> <small style='color:gray;'>{row['time']}</small><br>
-                <div style='color:black;'>{row['text']}</div>
-            </div>
-        """, unsafe_allow_html=True)
+# 投稿の取得と表示
+posts_ref = db.collection("posts").order_by("time", direction=firestore.Query.DESCENDING).limit(20)
+posts = posts_ref.stream()
+
+for post in posts:
+    p = post.to_dict()
+    time_str = p['time'].astimezone(tokyo_tz).strftime('%m/%d %H:%M') if 'time' in p else "不明"
+    st.markdown(f"""
+        <div style="border-bottom:1px solid #eee; padding:10px;">
+            <b style="color:#1DA1F2;">{p.get('user', '名無し')}</b> 
+            <small style="color:gray;">{time_str}</small><br>
+            <div style="margin-top:5px;">{p.get('text', '')}</div>
+        </div>
+    """, unsafe_allow_html=True)

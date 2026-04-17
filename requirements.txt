@@ -1,4 +1,2 @@
-streamlit
-st-gsheets-connection
-groq
-pandas
+firebase-admin
+pytz
