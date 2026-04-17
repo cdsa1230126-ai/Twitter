@@ -5,13 +5,14 @@ import json
 
 if not firebase_admin._apps:
     try:
-        # Secretsから文字列を取得
-        info_str = st.secrets["firebase"]["info"]
+        # Secretsから取得（'''で囲まれているので、ただの文字の塊として届きます）
+        info_json_raw = st.secrets["firebase"]["info"]
         
-        # 文字列を辞書(dict)に変換
-        info_dict = json.loads(info_str)
+        # JSONとして解析
+        info_dict = json.loads(info_json_raw)
         
-        # 秘密鍵内の改行（\n）が、文字列として入っている場合を考慮して置換
+        # 秘密鍵の中にある「文字としての \n 」を「本物の改行コード」に置き換える
+        # これが Firebase の認証に必須の処理です
         if "private_key" in info_dict:
             info_dict["private_key"] = info_dict["private_key"].replace("\\n", "\n")
         
@@ -19,8 +20,8 @@ if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
         
     except Exception as e:
-        st.error(f"Firebaseの初期化に失敗しました: {e}")
+        st.error(f"初期化失敗: {e}")
         st.stop()
 
 db = firestore.client()
-st.success("🎯 ついに接続成功です！")
+st.success("🎯 ついに接続に成功しました！お待たせしました！")
