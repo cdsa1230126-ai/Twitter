@@ -8,24 +8,25 @@ if not firebase_admin._apps:
     try:
         fb_sec = st.secrets["firebase"]
         
-        # 1. 基本データの復元
+        # 1. raw_data（カンマ区切り）から基本情報を復元
         parts = fb_sec["raw_data"].split(",")
         
-        # 2. 【究極の秘密鍵クレンジング】
-        # まず、ヘッダー/フッター、改行、スペースをすべて排除して「純粋な英数字のみ」の塊にする
+        # 2. 【徹底洗浄】秘密鍵のクレンジング
+        # ヘッダーとフッターを一旦取り除く
         raw_key = fb_sec["private_key"]
         raw_key = raw_key.replace("-----BEGIN PRIVATE KEY-----", "")
         raw_key = raw_key.replace("-----END PRIVATE KEY-----", "")
-        # 改行や空白、タブなどをすべて削除
-        pure_key = re.sub(r"[\s\n\r]", "", raw_key)
         
-        # 規格（RFC 7468）に従い、64文字ごとに本物の改行を入れる
+        # ★重要：英数字と記号（+ / =）以外の「すべての見えない文字（改行、スペース、タブ）」を完全消去
+        pure_key = re.sub(r"[^A-Za-z0-9+/=]", "", raw_key)
+        
+        # 規格に従い、64文字ごとに改行を入れ直す
         formatted_content = "\n".join(textwrap.wrap(pure_key, 64))
         
-        # 正しいヘッダーとフッターで包み直す
+        # 正しい形で包み直す
         fixed_key = f"-----BEGIN PRIVATE KEY-----\n{formatted_content}\n-----END PRIVATE KEY-----\n"
         
-        # 3. 辞書の組み立て
+        # 3. 認証用辞書の組み立て
         info_dict = {
             "type": "service_account",
             "project_id": parts[0],
@@ -47,7 +48,7 @@ if not firebase_admin._apps:
         st.error(f"初期化失敗: {e}")
         st.stop()
 
-# --- 接続成功 ---
+# --- 接続成功時 ---
 db = firestore.client()
-st.title("🏆 ついに完全勝利です！")
-st.success("秘密鍵のフォーマット（64文字ルール）をプログラムで強制解決し、Firestoreへ接続できました")
+st.title("🏆 ついに、完全勝利です！")
+st.success("Firebaseの厳格なフォーマットチェックをプログラムで突破しました！")
