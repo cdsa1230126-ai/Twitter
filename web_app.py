@@ -9,7 +9,8 @@ from PIL import Image
 # --- 設定：管理者のメールアドレス ---
 ADMIN_EMAIL = "cdsa1230126@gn.iwasaki.ac.jp" 
 
-st.set_page_config(page_title="iwitter", page_icon="𝕏")
+# ブラウザのタブ名も Iwattar に変更
+st.set_page_config(page_title="Iwattar", page_icon="🐦")
 
 # --- 1. Firebase初期化 ---
 if not firebase_admin._apps:
@@ -27,12 +28,14 @@ db = firestore.client()
 # --- 2. セッション状態の初期化 ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-if "is_admin" not in st.session_state:
-    st.session_state.is_admin = False
+if "is_admin_user" not in st.session_state:
+    st.session_state.is_admin_user = False
+if "admin_mode_on" not in st.session_state:
+    st.session_state.admin_mode_on = False 
 
 # --- 3. ログイン・サインアップ画面 ---
 if not st.session_state.logged_in:
-    st.title("𝕏 iwitter")
+    st.title("Iwattar") # 𝕏 を削除
     tab1, tab2 = st.tabs(["ログイン", "アカウント作成"])
 
     with tab1:
@@ -46,7 +49,10 @@ if not st.session_state.logged_in:
                     st.session_state.logged_in = True
                     st.session_state.user_email = email
                     st.session_state.user_id = user.uid
-                    st.session_state.is_admin = (email.strip() == ADMIN_EMAIL.strip())
+                    
+                    st.session_state.is_admin_user = (email.strip() == ADMIN_EMAIL.strip())
+                    st.session_state.admin_mode_on = st.session_state.is_admin_user
+                    
                     user_doc = db.collection('users').document(user.uid).get()
                     st.session_state.user_name = user_doc.to_dict().get('display_name', user.display_name) if user_doc.exists else user.display_name
                     st.rerun()
@@ -72,9 +78,15 @@ if not st.session_state.logged_in:
     st.stop()
 
 # --- 4. ログイン後のメイン画面 ---
-st.title("𝕏 iwitter")
-if st.session_state.get("is_admin", False):
-    st.warning("🛠️ 管理者モードでログイン中")
+st.title("Iwattar") # 𝕏 を削除
+
+# 管理者スイッチ
+if st.session_state.is_admin_user:
+    st.session_state.admin_mode_on = st.toggle("🛠️ 管理者モードを有効にする", value=st.session_state.admin_mode_on)
+    if st.session_state.admin_mode_on:
+        st.warning("現在：管理者モード（全投稿の削除権限あり）")
+    else:
+        st.info("現在：一般モード")
 
 # --- サイドバー：プロフィール設定 ---
 st.sidebar.title("プロフィール設定")
@@ -85,7 +97,6 @@ user_data = user_doc.to_dict() if user_doc.exists else {}
 current_name = user_data.get('display_name', st.session_state.user_name)
 current_avatar_data = user_data.get('avatar_data')
 
-# アイコンの表示
 if current_avatar_data:
     st.sidebar.image(current_avatar_data, width=100)
 else:
@@ -93,21 +104,17 @@ else:
 
 with st.sidebar.form("profile_edit_form"):
     new_name = st.text_input("名前を変更", value=current_name)
-    uploaded_file = st.file_uploader("画像をアップロード（容量節約のため小さい画像を推奨）", type=["jpg", "png", "jpeg"])
+    uploaded_file = st.file_uploader("画像をアップロード", type=["jpg", "png", "jpeg"])
     
     if st.form_submit_button("プロフィールを更新"):
         update_data = {"display_name": new_name}
-        
         if uploaded_file is not None:
-            # 画像をリサイズして軽量化（Firestoreの容量制限対策）
             img = Image.open(uploaded_file)
-            img.thumbnail((128, 128)) # 128x128ピクセルに縮小
+            img.thumbnail((128, 128))
             buffered = BytesIO()
             img.save(buffered, format="PNG")
-            # Base64形式のテキストに変換
             img_str = base64.b64encode(buffered.getvalue()).decode()
             update_data["avatar_data"] = f"data:image/png;base64,{img_str}"
-            
         user_ref.set(update_data, merge=True)
         st.session_state.user_name = new_name
         st.success("更新しました！")
@@ -121,13 +128,13 @@ if st.sidebar.button("ログアウト"):
 st.subheader("いまどうしてる？")
 with st.form("tweet_form", clear_on_submit=True):
     content = st.text_area("内容を入力してください", max_chars=140)
-    if st.form_submit_button("ツイートする"):
+    if st.form_submit_button("ポストする"): # ボタンのテキストも少しマイルドに
         if content.strip():
             db.collection("tweets").add({
                 "text": content,
                 "user_name": st.session_state.user_name,
                 "user_id": st.session_state.user_id,
-                "avatar_data": current_avatar_data, # 現在の画像データを投稿に紐付け
+                "avatar_data": current_avatar_data,
                 "created_at": firestore.SERVER_TIMESTAMP
             })
             st.rerun()
@@ -142,6 +149,7 @@ def show_timeline():
             data = tweet.to_dict()
             tweet_id = tweet.id
             is_own_post = data.get('user_id') == st.session_state.user_id
+            is_admin_mode = st.session_state.is_admin_user and st.session_state.admin_mode_on
             
             with st.container(border=True):
                 col1, col2 = st.columns([1, 6])
@@ -159,8 +167,9 @@ def show_timeline():
                         ts = data.get('created_at')
                         if ts: st.caption(f"🕒 {ts.strftime('%H:%M:%S')}")
                     with foot2:
-                        if st.session_state.get("is_admin", False) or is_own_post:
-                            if st.button("🗑️ 削除", key=f"del_{tweet_id}"):
+                        if is_admin_mode or is_own_post:
+                            btn_label = "🗑️ 削除" if is_own_post else "🗑️ 管理削除"
+                            if st.button(btn_label, key=f"del_{tweet_id}"):
                                 db.collection("tweets").document(tweet_id).delete()
                                 st.rerun()
     except Exception as e:
