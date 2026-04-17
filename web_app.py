@@ -116,28 +116,39 @@ with main_col:
                 if st.button("一括登録を実行"):
                     if csv_file is not None:
                         try:
-                            # 1. まずはUTF-8で試す
+                            # 1. まずは UTF-8 で試す
                             try:
                                 df = pd.read_csv(csv_file, encoding='utf-8')
                             except:
-                                # 2. 失敗したら、特殊文字(絵文字)を許可しつつShift-JIS系で読み込む
+                                # 2. 失敗したら Shift-JIS(cp932) で、エラー文字を置き換えつつ読み込む
                                 csv_file.seek(0)
-                                # errors='replace' をつけることで、読み取れない文字を「?」に置き換えて強引に読み込みます
-                                df = pd.read_csv(csv_file, encoding='cp932', errors='replace')
+                                # pd.read_csv では encoding_errors を使います
+                                df = pd.read_csv(csv_file, encoding='cp932', encoding_errors='replace')
                             
-                            # もし1行目がタイトル（2026年度34年ゼミ一覧）なら、それを飛ばして
-                            # 2行目（ID, ゼミ名...）をヘッダーにする処理
-                            if "ID" not in df.columns:
-                                # 1行目を捨てて、2行目をヘッダーに設定し直す
-                                df.columns = df.iloc[0]
-                                df = df[1:]
+                            # --- スプレッドシートの「タイトル行」対策 ---
+                            # 最初の数行を見て「ID」という文字が見つかるまで行を読み飛ばす
+                            found_header = False
+                            for i in range(len(df)):
+                                if "ID" in str(df.iloc[i, 0]):
+                                    # 「ID」が見つかった行をヘッダー（見出し）にする
+                                    df.columns = df.iloc[i]
+                                    df = df.iloc[i+1:]
+                                    found_header = True
+                                    break
+                            
+                            if not found_header:
+                                st.error("CSV内に 'ID' という見出しが見つかりませんでした。列の1行目を 'ID' にしてください。")
+                                st.stop()
 
+                            # --- Firestore への登録処理 ---
+                            count = 0
                             for _, row in df.iterrows():
-                                # 空白行やタイトル行を完全にスキップ
-                                if pd.isna(row[0]) or str(row[0]) == "ID":
+                                # IDが空、または「ID」という文字そのものの行は飛ばす
+                                if pd.isna(row[0]) or str(row[0]).strip() == "" or str(row[0]) == "ID":
                                     continue 
                                 
                                 doc_id = str(row[0]).strip()
+                                # 画像の列構成に合わせて順番で指定 (0=ID, 1=ゼミ名, 2=担当教員...)
                                 db.collection("zemis").document(doc_id).set({
                                     "name": str(row[1]),
                                     "prof": str(row[2]),
@@ -148,7 +159,9 @@ with main_col:
                                     "format": str(row[7]),
                                     "career": str(row[8])
                                 })
-                            st.success(f"正常に {len(df)} 件のデータをインポートしました！")
+                                count += 1
+                                
+                            st.success(f"正常に {count} 件のゼミデータをインポートしました！")
                             st.rerun()
                         except Exception as ex:
                             st.error(f"読み込み失敗: {ex}")
