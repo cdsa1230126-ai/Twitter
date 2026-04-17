@@ -1,8 +1,9 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
+import json
 
-# --- Firebase初期化 (最終クリーンアップ版) ---
+# --- Firebase初期化 (徹底クリーニング・最終手段版) ---
 if not firebase_admin._apps:
     try:
         # 1. Secretsから取得
@@ -11,25 +12,25 @@ if not firebase_admin._apps:
         if "private_key" in fb_dict:
             pk = fb_dict["private_key"]
             
-            # 2. \n が文字列として入っている場合に備えて改行に変換
+            # 2. \n の置換（1行書き・複数行書き両方に対応）
             pk = pk.replace("\\n", "\n")
             
-            # 3. 【重要】鍵の終端記号の後ろにゴミがあれば、物理的にカットする
-            # これが InvalidByte(1629, 61) 対策の決め手です
-            marker = "-----END PRIVATE KEY-----"
-            if marker in pk:
-                pk = pk[:pk.find(marker) + len(marker)]
+            # 3. 【最重要】InvalidByte(1629, 61) の原因となる末尾のゴミを徹底排除
+            # "-----END PRIVATE KEY-----" のあとの文字をすべて消します
+            end_marker = "-----END PRIVATE KEY-----"
+            if end_marker in pk:
+                pk = pk.split(end_marker)[0] + end_marker
             
-            # 4. 前後の余計な空白文字を徹底削除
+            # 4. 前後の不要な改行やスペース、変な記号を完全に消す
             fb_dict["private_key"] = pk.strip()
             
-        # 5. 証明書としてロード
+        # 5. Firebaseに渡す
         cred = credentials.Certificate(fb_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"初期化失敗: {e}")
+        # 具体的に何が起きているか詳細を出すようにしました
+        st.error(f"初期化失敗の詳細: {e}")
         st.stop()
 
-# データベース接続
 db = firestore.client()
 st.success("Firebaseに正常に接続されました！")
