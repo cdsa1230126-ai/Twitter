@@ -116,39 +116,41 @@ with main_col:
                 if st.button("一括登録を実行"):
                     if csv_file is not None:
                         try:
-                            # 1. まずは UTF-8 で試す
+                            # 1. 読み込み時のエラーを回避するため、まずは「列数を固定せず」に読み込む
+                            # header=None にし、名前を付けずに一旦全データを読み込む
                             try:
-                                df = pd.read_csv(csv_file, encoding='utf-8')
+                                df_raw = pd.read_csv(csv_file, encoding='utf-8', header=None, on_bad_lines='skip')
                             except:
-                                # 2. 失敗したら Shift-JIS(cp932) で、エラー文字を置き換えつつ読み込む
                                 csv_file.seek(0)
-                                # pd.read_csv では encoding_errors を使います
-                                df = pd.read_csv(csv_file, encoding='cp932', encoding_errors='replace')
+                                df_raw = pd.read_csv(csv_file, encoding='cp932', encoding_errors='replace', header=None, on_bad_lines='skip')
                             
-                            # --- スプレッドシートの「タイトル行」対策 ---
-                            # 最初の数行を見て「ID」という文字が見つかるまで行を読み飛ばす
-                            found_header = False
-                            for i in range(len(df)):
-                                if "ID" in str(df.iloc[i, 0]):
-                                    # 「ID」が見つかった行をヘッダー（見出し）にする
-                                    df.columns = df.iloc[i]
-                                    df = df.iloc[i+1:]
-                                    found_header = True
+                            # --- 「ID」という文字が含まれるヘッダー行を特定する ---
+                            header_idx = None
+                            for i in range(len(df_raw)):
+                                # 最初の列付近に "ID" という文字列があるか探す
+                                row_str = str(df_raw.iloc[i, 0])
+                                if "ID" in row_str:
+                                    header_idx = i
                                     break
                             
-                            if not found_header:
-                                st.error("CSV内に 'ID' という見出しが見つかりませんでした。列の1行目を 'ID' にしてください。")
+                            if header_idx is None:
+                                st.error("CSV内に 'ID' という見出しが見つかりませんでした。1行目または2行目の最初の列に 'ID' と入力されているか確認してください。")
                                 st.stop()
+
+                            # ヘッダー行を適用して、それ以降をデータとする
+                            df = df_raw.iloc[header_idx+1:].copy()
+                            df.columns = df_raw.iloc[header_idx]
 
                             # --- Firestore への登録処理 ---
                             count = 0
                             for _, row in df.iterrows():
-                                # IDが空、または「ID」という文字そのものの行は飛ばす
-                                if pd.isna(row[0]) or str(row[0]).strip() == "" or str(row[0]) == "ID":
+                                # IDが空、またはIDという文字そのものの行は飛ばす
+                                val_id = str(row[0]).strip()
+                                if pd.isna(row[0]) or val_id == "" or val_id == "ID" or val_id == "nan":
                                     continue 
                                 
-                                doc_id = str(row[0]).strip()
-                                # 画像の列構成に合わせて順番で指定 (0=ID, 1=ゼミ名, 2=担当教員...)
+                                doc_id = val_id
+                                # スプレッドシートの列順（左から 0, 1, 2...）で確実に取得
                                 db.collection("zemis").document(doc_id).set({
                                     "name": str(row[1]),
                                     "prof": str(row[2]),
