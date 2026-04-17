@@ -3,18 +3,20 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import textwrap
 
+# --- 1. Firebase初期化設定 ---
 if not firebase_admin._apps:
     try:
+        # Secretsから取得
         fb_cfg = st.secrets["firebase"]
         
-        # 1. 英数字だけの塊を取得
+        # 【重要】英数字だけの塊を取得
         pure_data = fb_cfg["private_key_pure"]
         
-        # 2. 秘密鍵を正しいPEM形式に整形（ここが重要！）
-        # RSA鍵のルールに従い、64文字ごとに本物の改行を入れます
+        # 【重要】RSA鍵の厳格なルール「64文字ごとに改行」を強制適用
+        # これをやらないと "extra data" エラーになります
         wrapped_data = "\n".join(textwrap.wrap(pure_data, 64))
         
-        # 3. 前後のヘッダー・フッターを合体
+        # 正しいPEM形式（ヘッダー・フッター・改行）に組み立て
         formatted_key = f"-----BEGIN PRIVATE KEY-----\n{wrapped_data}\n-----END PRIVATE KEY-----\n"
 
         fb_creds = {
@@ -31,6 +33,7 @@ if not firebase_admin._apps:
             "private_key": formatted_key
         }
         
+        # Firebaseアプリを初期化
         cred = credentials.Certificate(fb_creds)
         firebase_admin.initialize_app(cred)
         
@@ -38,7 +41,11 @@ if not firebase_admin._apps:
         st.error(f"初期化失敗: {e}")
         st.stop()
 
-# --- 接続成功メッセージ ---
+# --- 2. 接続確認 ---
 db = firestore.client()
-st.title("🏆 ついに完全勝利です！")
-st.success("鍵の整形（64文字改行ルール）をクリアし、接続に成功しました！")
+
+st.title("🏆 ついに完全接続！")
+st.success("秘密鍵のフォーマット問題を突破し、Firestoreへの接続に成功しました。")
+
+# プロジェクトIDを表示して確認
+st.info(f"現在の接続先: {fb_cfg['project_id']}")
