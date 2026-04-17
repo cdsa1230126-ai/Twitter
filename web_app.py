@@ -1,20 +1,27 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
+import textwrap
 
 if not firebase_admin._apps:
     try:
         fb_sec = st.secrets["firebase"]
         
-        # カンマ区切りの文字列をリストに戻す
+        # 1. 基本データの復元
         parts = fb_sec["raw_data"].split(",")
         
-        # 辞書を再構成（プログラムが手動で組み立てるので、TOMLのパースエラーが起きません）
+        # 2. 秘密鍵の整形（ここが今回のポイント！）
+        # 前後のヘッダー・フッターを一度取り除き、中身を64文字ごとに改行し直します
+        raw_key = fb_sec["private_key"].replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "").replace("\n", "").strip()
+        formatted_content = "\n".join(textwrap.wrap(raw_key, 64))
+        fixed_key = f"-----BEGIN PRIVATE KEY-----\n{formatted_content}\n-----END PRIVATE KEY-----\n"
+        
+        # 3. 辞書の組み立て
         info_dict = {
             "type": "service_account",
             "project_id": parts[0],
             "private_key_id": parts[1],
-            "private_key": fb_sec["private_key"],
+            "private_key": fixed_key,
             "client_email": parts[2],
             "client_id": parts[3],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -32,4 +39,5 @@ if not firebase_admin._apps:
         st.stop()
 
 db = firestore.client()
-st.success("🏆 やりました！ついに、ついに成功です！")
+st.title("🏆 完全勝利")
+st.success("Firebaseへの接続に成功しました！これですべての準備が整いました。")
