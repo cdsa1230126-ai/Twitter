@@ -27,7 +27,7 @@ if "logged_in" not in st.session_state:
 
 # --- 3. ログイン・サインアップ画面 ---
 if not st.session_state.logged_in:
-    st.title("𝕏 iwitter (Firebase Auth)")
+    st.title("iwitter")
     tab1, tab2 = st.tabs(["ログイン", "アカウント作成"])
 
     with tab1:
