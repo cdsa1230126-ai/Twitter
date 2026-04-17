@@ -5,17 +5,16 @@ import json
 
 if not firebase_admin._apps:
     try:
-        # Secretsから取得（'''で囲まれているので、ただの文字の塊として届きます）
-        info_json_raw = st.secrets["firebase"]["info"]
+        # Secretsから文字列を取得
+        info_json = st.secrets["firebase"]["info"]
         
-        # JSONとして解析
-        info_dict = json.loads(info_json_raw)
+        # JSON辞書に変換
+        info_dict = json.loads(info_json)
         
-        # 秘密鍵の中にある「文字としての \n 」を「本物の改行コード」に置き換える
-        # これが Firebase の認証に必須の処理です
-        if "private_key" in info_dict:
-            info_dict["private_key"] = info_dict["private_key"].replace("\\n", "\n")
+        # 秘密鍵内の \n 文字を実際の改行に置換
+        info_dict["private_key"] = info_dict["private_key"].replace("\\n", "\n")
         
+        # Firebase初期化
         cred = credentials.Certificate(info_dict)
         firebase_admin.initialize_app(cred)
         
@@ -24,4 +23,4 @@ if not firebase_admin._apps:
         st.stop()
 
 db = firestore.client()
-st.success("🎯 ついに接続に成功しました！お待たせしました！")
+st.success("🎉 おめでとうございます！ついに接続できました！")
