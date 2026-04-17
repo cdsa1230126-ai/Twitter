@@ -8,24 +8,32 @@ import pytz
 # ページ設定
 st.set_page_config(page_title="iwitter - Firebase AI Edition", layout="wide")
 
-# --- 1. Firebase初期化 ---
-# Secretsから1行形式の鍵を読み込み、正しく改行コードを復元する処理
+# --- 1. Firebase初期化 (超強力・自動掃除版) ---
 if not firebase_admin._apps:
     try:
         if "firebase" not in st.secrets:
             st.error("Secretsに [firebase] セクションが見つかりません。")
             st.stop()
             
+        # Secretsから辞書をコピー
         fb_creds = dict(st.secrets["firebase"])
         
-        # 鍵の中の \n という文字列を、実際の改行コードに変換
         if "private_key" in fb_creds:
-            fb_creds["private_key"] = fb_creds["private_key"].replace("\\n", "\n")
+            # 1. まず文字列の前後にある目に見えないスペースや改行を完全に除去
+            pk = fb_creds["private_key"].strip()
+            # 2. \n という文字を実際の改行に変換
+            pk = pk.replace("\\n", "\n")
+            # 3. もし引用符などが紛れ込んでいたら除去
+            pk = pk.strip('"').strip("'")
+            
+            fb_creds["private_key"] = pk
         
         cred = credentials.Certificate(fb_creds)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"Firebaseの初期化に失敗しました。Secretsの形式を確認してください。\nエラー詳細: {e}")
+        st.error(f"Firebaseの初期化に失敗しました。\nエラー詳細: {e}")
+        # 詳細なデバッグ情報を表示（解決したら消します）
+        st.write("デバッグ情報: 鍵の長さは", len(fb_creds.get("private_key", "")))
         st.stop()
 
 db = firestore.client()
