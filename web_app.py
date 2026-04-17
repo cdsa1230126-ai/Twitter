@@ -24,9 +24,8 @@ db = firestore.client()
 # --- 2. セッション状態の初期化 ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-    st.session_state.user_name = ""
-    st.session_state.user_id = ""
-    st.session_state.is_admin = False # 管理者フラグを追加
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False  # 事前に作っておく
 
 # --- 3. ログイン・サインアップ画面 ---
 if not st.session_state.logged_in:
@@ -46,10 +45,7 @@ if not st.session_state.logged_in:
                     st.session_state.user_id = user.uid
                     
                     # 管理者判定
-                    if email == ADMIN_EMAIL:
-                        st.session_state.is_admin = True
-                    else:
-                        st.session_state.is_admin = False
+                    st.session_state.is_admin = (email == ADMIN_EMAIL)
                         
                     user_doc = db.collection('users').document(user.uid).get()
                     st.session_state.user_name = user_doc.to_dict().get('display_name', user.display_name) if user_doc.exists else user.display_name
@@ -79,7 +75,9 @@ if not st.session_state.logged_in:
 
 # --- 4. ログイン後のメイン画面 ---
 st.title("𝕏 iwitter")
-if st.session_state.is_admin:
+
+# 安全に管理者判定を行う（エラー回避用）
+if st.session_state.get("is_admin", False):
     st.warning("🛠️ 管理者モードでログイン中：すべての投稿を削除できます。")
 
 # --- サイドバー：プロフィール設定 ---
@@ -103,8 +101,7 @@ with st.sidebar.form("profile_edit_form"):
         st.rerun()
 
 if st.sidebar.button("ログアウト"):
-    st.session_state.logged_in = False
-    st.session_state.is_admin = False
+    st.session_state.clear() # セッションを完全にクリアしてログアウト
     st.rerun()
 
 # --- 投稿フォーム ---
@@ -147,8 +144,8 @@ def show_timeline():
                         if ts: st.caption(f"🕒 {ts.strftime('%H:%M:%S')}")
                     
                     with foot2:
-                        # 自分の投稿、または管理者である場合に削除ボタンを表示
-                        if is_own_post or st.session_state.is_admin:
+                        # 管理者か自分の投稿なら削除ボタンを表示
+                        if st.session_state.get("is_admin", False) or is_own_post:
                             btn_label = "🗑️ 削除" if is_own_post else "🗑️ 管理削除"
                             if st.button(btn_label, key=f"del_{tweet_id}"):
                                 db.collection("tweets").document(tweet_id).delete()
