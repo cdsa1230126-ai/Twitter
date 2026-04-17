@@ -11,6 +11,18 @@ ADMIN_EMAIL = "cdsa1230126@gn.iwasaki.ac.jp"
 
 st.set_page_config(page_title="Iwattar", page_icon="🐦", layout="wide")
 
+# --- 画像保護用CSS ---
+st.markdown(
+    """
+    <style>
+    img { -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; pointer-events: none; }
+    /* 右側ナビゲーションボタンのスタイル */
+    .stButton > button { width: 100%; border-radius: 5px; height: 3em; margin-bottom: 5px; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # --- 1. Firebase初期化 ---
 if not firebase_admin._apps:
     try:
@@ -24,7 +36,7 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-# --- 2. 画像変換用関数 ---
+# --- 2. 関数群 ---
 def convert_image_to_base64(uploaded_file, size=(400, 300)):
     if uploaded_file is not None:
         img = Image.open(uploaded_file)
@@ -37,12 +49,10 @@ def convert_image_to_base64(uploaded_file, size=(400, 300)):
 # --- 3. セッション状態の初期化 ---
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-if "is_admin_user" not in st.session_state:
-    st.session_state.is_admin_user = False
-if "admin_mode_on" not in st.session_state:
-    st.session_state.admin_mode_on = False
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "タイムライン" # 初期表示ページ
 
-# --- 4. ログイン処理 ---
+# --- 4. ログイン・サインアップ ---
 if not st.session_state.logged_in:
     st.title("Iwattar")
     tab1, tab2 = st.tabs(["ログイン", "アカウント作成"])
@@ -70,113 +80,121 @@ if not st.session_state.logged_in:
                 try:
                     user = auth.create_user(email=new_email, password=new_pass, display_name=display_name)
                     db.collection("users").document(user.uid).set({"display_name": display_name, "avatar_data": None})
-                    st.success("成功！ログインしてください")
+                    st.success("作成成功！")
                 except Exception as e: st.error(f"失敗: {e}")
     st.stop()
 
-# --- 5. メイン画面 ---
-st.title("Iwattar")
+# --- 5. メイン画面構成 ---
+# 画面を「左プロフィール・中コンテンツ・右メニュー」の3カラムに分割
+side_col, main_col, nav_col = st.columns([2, 5, 2])
 
-# 管理者スイッチ
-if st.session_state.is_admin_user:
-    st.session_state.admin_mode_on = st.toggle("🛠️ 管理者モード", value=st.session_state.admin_mode_on)
+# --- 左カラム：プロフィール ---
+with side_col:
+    st.title("Iwattar")
+    user_ref = db.collection('users').document(st.session_state.user_id)
+    user_data = user_ref.get().to_dict() or {}
+    current_avatar = user_data.get('avatar_data')
 
-# サイドバー設定
-st.sidebar.title("プロフィール")
-user_ref = db.collection('users').document(st.session_state.user_id)
-user_data = user_ref.get().to_dict() or {}
-current_avatar = user_data.get('avatar_data')
-
-if current_avatar: st.sidebar.image(current_avatar, width=100)
-else: st.sidebar.markdown("# 👤")
-
-with st.sidebar.form("profile_edit"):
-    new_name = st.text_input("名前", value=user_data.get('display_name', st.session_state.user_name))
-    up_avatar = st.file_uploader("アイコン変更", type=["jpg", "png"])
-    if st.form_submit_button("更新"):
-        up_data = {"display_name": new_name}
-        if up_avatar: up_data["avatar_data"] = convert_image_to_base64(up_avatar, (128, 128))
-        user_ref.set(up_data, merge=True)
-        st.session_state.user_name = new_name
+    if current_avatar: st.image(current_avatar, width=100)
+    else: st.markdown("# 👤")
+    
+    st.write(f"**{st.session_state.user_name}**")
+    
+    with st.expander("設定"):
+        new_name = st.text_input("名前変更", value=st.session_state.user_name)
+        up_avatar = st.file_uploader("アイコン変更", type=["jpg", "png"])
+        if st.button("保存"):
+            up_data = {"display_name": new_name}
+            if up_avatar: up_data["avatar_data"] = convert_image_to_base64(up_avatar, (128, 128))
+            user_ref.set(up_data, merge=True)
+            st.session_state.user_name = new_name
+            st.rerun()
+    
+    if st.button("ログアウト"):
+        st.session_state.clear()
         st.rerun()
 
-if st.sidebar.button("ログアウト"):
-    st.session_state.clear()
-    st.rerun()
-
-# --- タブ構成 ---
-main_tab, zemi_tab, news_tab = st.tabs(["🏠 タイムライン", "🎓 ゼミ一覧", "📢 お知らせ"])
-
-# --- 🏠 タイムラインタブ ---
-with main_tab:
-    with st.form("post_form", clear_on_submit=True):
-        content = st.text_area("いまどうしてる？", max_chars=140)
-        post_img = st.file_uploader("画像を載せる", type=["jpg", "png", "jpeg"])
-        if st.form_submit_button("ポストする"):
-            if content.strip():
-                img_base64 = convert_image_to_base64(post_img) if post_img else None
-                db.collection("tweets").add({
-                    "text": content,
-                    "user_name": st.session_state.user_name,
-                    "user_id": st.session_state.user_id,
-                    "avatar_data": current_avatar,
-                    "post_image": img_base64,
-                    "created_at": firestore.SERVER_TIMESTAMP
-                })
-                st.rerun()
-
+# --- 右カラム：ナビゲーションメニュー ---
+with nav_col:
+    st.markdown("### Menu")
+    if st.button("🏠 タイムライン"):
+        st.session_state.current_page = "タイムライン"
+        st.rerun()
+    if st.button("🎓 ゼミ一覧"):
+        st.session_state.current_page = "ゼミ一覧"
+        st.rerun()
+    if st.button("📢 お知らせ"):
+        st.session_state.current_page = "お知らせ"
+        st.rerun()
+    
     st.divider()
-    tweets = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING).limit(20).stream()
-    for t in tweets:
-        d = t.to_dict()
-        with st.container(border=True):
-            col1, col2 = st.columns([1, 6])
-            with col1:
-                if d.get('avatar_data'): st.image(d.get('avatar_data'), width=50)
-                else: st.write("## 👤")
-            with col2:
-                st.markdown(f"**{d.get('user_name')}**")
-                st.write(d.get('text'))
-                if d.get('post_image'): st.image(d.get('post_image'), use_container_width=True)
-                
-                if st.session_state.admin_mode_on or d.get('user_id') == st.session_state.user_id:
-                    if st.button("🗑️ 削除", key=f"del_{t.id}"):
-                        db.collection("tweets").document(t.id).delete()
-                        st.rerun()
+    if st.session_state.is_admin_user:
+        st.session_state.admin_mode_on = st.toggle("🛠️ 管理者モード", value=st.session_state.get('admin_mode_on', False))
 
-# --- 🎓 ゼミ一覧タブ ---
-with zemi_tab:
-    st.subheader("ゼミナール紹介")
-    # ここは将来的にデータベースから取得するようにできます
-    zemis = [
-        {"name": "情報工学ゼミ", "prof": "山田教授", "desc": "AIとWeb開発を中心に研究しています。"},
-        {"name": "経営戦略ゼミ", "prof": "佐藤教授", "desc": "現代のスタートアップ文化を分析します。"},
-        {"name": "デザインゼミ", "prof": "田中教授", "desc": "UI/UXデザインの実践的な習得を目指します。"}
-    ]
-    for z in zemis:
-        with st.expander(f"📘 {z['name']} ({z['prof']})"):
-            st.write(z['desc'])
-            st.button("詳細を見る", key=z['name'])
+# --- 中央カラム：メインコンテンツ（ここが切り替わる） ---
+with main_col:
+    page = st.session_state.current_page
+    st.header(page)
 
-# --- 📢 お知らせ一覧タブ ---
-with news_tab:
-    st.subheader("学校からのお知らせ")
-    # 管理者ならお知らせを投稿できる機能を追加可能
-    if st.session_state.admin_mode_on:
-        with st.expander("➕ お知らせを新規作成（管理者用）"):
-            new_news = st.text_input("タイトル")
-            if st.button("お知らせを公開"):
-                db.collection("news").add({
-                    "title": new_news,
-                    "date": firestore.SERVER_TIMESTAMP
-                })
-                st.rerun()
+    if page == "タイムライン":
+        with st.form("post_form", clear_on_submit=True):
+            content = st.text_area("いまどうしてる？", max_chars=140)
+            post_img = st.file_uploader("画像を載せる", type=["jpg", "png", "jpeg"])
+            if st.form_submit_button("ポストする"):
+                if content.strip():
+                    img_base64 = convert_image_to_base64(post_img) if post_img else None
+                    db.collection("tweets").add({
+                        "text": content, "user_name": st.session_state.user_name,
+                        "user_id": st.session_state.user_id, "avatar_data": current_avatar,
+                        "post_image": img_base64, "created_at": firestore.SERVER_TIMESTAMP
+                    })
+                    st.rerun()
 
-    news_items = db.collection("news").order_by("date", direction=firestore.Query.DESCENDING).stream()
-    for n in news_items:
-        nd = n.to_dict()
-        st.info(f"📅 {nd.get('title')}")
-        if st.session_state.admin_mode_on:
-            if st.button("❌ 削除", key=f"news_{n.id}"):
-                db.collection("news").document(n.id).delete()
-                st.rerun()
+        st.divider()
+        tweets = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING).limit(15).stream()
+        for t in tweets:
+            d = t.to_dict()
+            with st.container(border=True):
+                c1, c2 = st.columns([1, 6])
+                with c1:
+                    if d.get('avatar_data'): st.image(d.get('avatar_data'), width=45)
+                    else: st.write("👤")
+                with c2:
+                    st.markdown(f"**{d.get('user_name')}**")
+                    st.write(d.get('text'))
+                    if d.get('post_image'): st.image(d.get('post_image'), use_container_width=True)
+                    if st.session_state.get('admin_mode_on') or d.get('user_id') == st.session_state.user_id:
+                        if st.button("🗑️", key=f"del_{t.id}"):
+                            db.collection("tweets").document(t.id).delete()
+                            st.rerun()
+
+    elif page == "ゼミ一覧":
+        st.info("興味のあるゼミを探してみましょう。")
+        zemis = [
+            {"name": "情報工学ゼミ", "prof": "山田教授", "desc": "AI、Webアプリ、ブロックチェーン技術を実践的に学びます。"},
+            {"name": "経営デザインゼミ", "prof": "佐藤教授", "desc": "新サービスの企画やマーケティング戦略を研究します。"},
+            {"name": "ビジュアル表現ゼミ", "prof": "田中教授", "desc": "広告デザインやUX/UIなど、視覚伝達の最適化を追求します。"}
+        ]
+        for z in zemis:
+            with st.container(border=True):
+                st.subheader(f"📘 {z['name']}")
+                st.caption(f"担当：{z['prof']}")
+                st.write(z['desc'])
+                st.button("ゼミの掲示板を見る", key=f"btn_{z['name']}")
+
+    elif page == "お知らせ":
+        if st.session_state.get('admin_mode_on'):
+            with st.form("news_add"):
+                new_title = st.text_input("重要なお知らせを入力")
+                if st.form_submit_button("配信"):
+                    db.collection("news").add({"title": new_title, "date": firestore.SERVER_TIMESTAMP})
+                    st.rerun()
+        
+        news_items = db.collection("news").order_by("date", direction=firestore.Query.DESCENDING).stream()
+        for n in news_items:
+            nd = n.to_dict()
+            st.info(f"📅 {nd.get('title')}")
+            if st.session_state.get('admin_mode_on'):
+                if st.button("❌ 削除", key=f"n_del_{n.id}"):
+                    db.collection("news").document(n.id).delete()
+                    st.rerun()
