@@ -6,64 +6,124 @@ from datetime import datetime
 import pytz
 
 # ページ設定
-st.set_page_config(page_title="iwitter - Firebase Edition", layout="wide")
+st.set_page_config(page_title="iwitter - Firebase AI Edition", layout="wide")
 
 # --- 1. Firebase初期化 ---
+# Secretsから1行形式の鍵を読み込み、正しく改行コードを復元する処理
 if not firebase_admin._apps:
     try:
-        fb_credentials = dict(st.secrets["firebase"])
-        cred = credentials.Certificate(fb_credentials)
+        if "firebase" not in st.secrets:
+            st.error("Secretsに [firebase] セクションが見つかりません。")
+            st.stop()
+            
+        fb_creds = dict(st.secrets["firebase"])
+        
+        # 鍵の中の \n という文字列を、実際の改行コードに変換
+        if "private_key" in fb_creds:
+            fb_creds["private_key"] = fb_creds["private_key"].replace("\\n", "\n")
+        
+        cred = credentials.Certificate(fb_creds)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"Firebaseの初期化に失敗しました: {e}")
+        st.error(f"Firebaseの初期化に失敗しました。Secretsの形式を確認してください。\nエラー詳細: {e}")
         st.stop()
 
 db = firestore.client()
-client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+
+# --- 2. Groq AI初期化 ---
+try:
+    if "GROQ_API_KEY" in st.secrets:
+        ai_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    else:
+        st.warning("GROQ_API_KEYが設定されていません。AI機能は無効です。")
+        ai_client = None
+except Exception as e:
+    st.error(f"Groqの初期化エラー: {e}")
+    ai_client = None
+
 tokyo_tz = pytz.timezone('Asia/Tokyo')
 
-# --- 2. タイムライン表示エリア ---
-st.title("𝕏 iwitter (Firebase)")
-
+# --- 3. サイドバー（AIアシスタント） ---
 with st.sidebar:
     st.header("🤖 AI Assistant")
-    ai_query = st.text_input("AIに質問")
-    if st.button("聞く") and ai_query:
-        chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": ai_query}],
-            model="llama-3.3-70b-versatile",
-        )
-        st.write(chat_completion.choices[0].message.content)
+    st.write("Twitterの投稿内容の相談など、AIに聞いてみよう！")
+    ai_query = st.text_input("AIへの質問を入力", key="ai_input")
+    
+    if st.button("AIに聞く"):
+        if ai_client and ai_query:
+            with st.spinner("AIが考え中..."):
+                try:
+                    chat_completion = ai_client.chat.completions.create(
+                        messages=[{"role": "user", "content": ai_query}],
+                        model="llama-3.3-70b-versatile",
+                    )
+                    st.info(chat_completion.choices[0].message.content)
+                except Exception as e:
+                    st.error(f"AIエラー: {e}")
+        elif not ai_client:
+            st.error("APIキーが正しく設定されていないため、AIを使えません。")
+
+# --- 4. メイン画面（SNS機能） ---
+st.title("𝕏 iwitter (Firebase版)")
 
 # 投稿フォーム
-with st.expander("いまどうしてる？", expanded=True):
-    name = st.text_input("名前", value="ゲスト")
-    content = st.text_area("内容")
-    if st.button("投稿"):
+with st.container():
+    st.subheader("いまどうしてる？")
+    name = st.text_input("名前", value="ゲストユーザー", max_chars=20)
+    content = st.text_area("ツイート内容を入力してください", max_chars=140)
+    
+    if st.button("投稿する", use_container_width=True):
         if content:
-            # Firestoreにデータを追加
-            doc_ref = db.collection("posts").document()
-            doc_ref.set({
-                "user": name,
-                "text": content,
-                "time": datetime.now(tokyo_tz)
-            })
-            st.success("投稿しました！")
-            st.rerun()
+            try:
+                # Firestoreの 'posts' コレクションに保存
+                doc_ref = db.collection("posts").document()
+                doc_ref.set({
+                    "user": name,
+                    "text": content,
+                    "time": datetime.now(tokyo_tz)
+                })
+                st.success("投稿が完了しました！")
+                st.rerun()
+            except Exception as e:
+                st.error(f"送信失敗: {e}")
+        else:
+            st.warning("内容を入力してください。")
 
 st.divider()
 
-# 投稿の取得と表示
-posts_ref = db.collection("posts").order_by("time", direction=firestore.Query.DESCENDING).limit(20)
-posts = posts_ref.stream()
+# --- 5. タイムライン表示 ---
+st.subheader("最新のタイムライン")
 
-for post in posts:
-    p = post.to_dict()
-    time_str = p['time'].astimezone(tokyo_tz).strftime('%m/%d %H:%M') if 'time' in p else "不明"
-    st.markdown(f"""
-        <div style="border-bottom:1px solid #eee; padding:10px;">
-            <b style="color:#1DA1F2;">{p.get('user', '名無し')}</b> 
-            <small style="color:gray;">{time_str}</small><br>
-            <div style="margin-top:5px;">{p.get('text', '')}</div>
-        </div>
-    """, unsafe_allow_html=True)
+try:
+    # データを最新順に20件取得
+    posts_ref = db.collection("posts").order_by("time", direction=firestore.Query.DESCENDING).limit(20)
+    posts = posts_ref.stream()
+
+    found_posts = False
+    for post in posts:
+        found_posts = True
+        p = post.to_dict()
+        
+        # 時刻の処理
+        time_val = p.get('time')
+        if time_val:
+            # Firestoreから取得した時刻を日本時間に変換して表示
+            display_time = time_val.astimezone(tokyo_tz).strftime('%Y/%m/%d %H:%M')
+        else:
+            display_time = "時刻不明"
+            
+        # ツイート風の見た目
+        st.markdown(f"""
+            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 5px solid #1DA1F2; margin-bottom: 15px;">
+                <b style="color: #1DA1F2; font-size: 1.1em;">@{p.get('user', '名無し')}</b> 
+                <span style="color: #657786; font-size: 0.8em; margin-left: 10px;">{display_time}</span><br>
+                <p style="margin-top: 10px; color: #14171A; font-size: 1.0em; line-height: 1.5;">{p.get('text', '')}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    if not found_posts:
+        st.info("まだ投稿がありません。最初のツイートをしてみましょう！")
+
+except Exception as e:
+    st.error(f"データ取得エラー: {e}")
+    st.info("FirebaseのFirestoreで 'posts' コレクションが作成されているか確認してください。")
