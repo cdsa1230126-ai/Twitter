@@ -41,7 +41,9 @@ if not st.session_state.logged_in:
                     st.session_state.logged_in = True
                     st.session_state.user_email = email
                     st.session_state.user_id = user.uid
-                    st.session_state.user_name = user.display_name
+                    # Firestoreから最新の名前を取得
+                    user_doc = db.collection('users').document(user.uid).get()
+                    st.session_state.user_name = user_doc.to_dict().get('display_name', user.display_name) if user_doc.exists else user.display_name
                     st.rerun()
                 except:
                     st.error("ログイン失敗。メールアドレスを確認してください。")
@@ -49,11 +51,8 @@ if not st.session_state.logged_in:
     with tab2:
         with st.form("signup_form"):
             st.markdown("### 新規登録")
-            new_email = st.text_input("メールアドレス（IDになります）", key="signup_email")
-            new_pass = st.text_input("パスワード（6文字以上）", type="password", key="signup_pass", help="Googleの自動生成も使えます")
-            
-            st.divider()
-            
+            new_email = st.text_input("メールアドレス", key="signup_email")
+            new_pass = st.text_input("パスワード（6文字以上）", type="password", key="signup_pass")
             display_name = st.text_input("表示名（ニックネーム）")
             avatar_choice = st.selectbox("アイコンを選択", ["🐱", "🐶", "🦊", "🐻", "🐼", "🤖", "🚀", "🌈", "🐥", "👻"])
             
@@ -77,52 +76,70 @@ if not st.session_state.logged_in:
 # --- 4. ログイン後のメイン画面 ---
 st.title("𝕏 クローン (iwitter)")
 
-# サイドバー設定
-st.sidebar.title("プロフィール")
-try:
-    user_doc = db.collection('users').document(st.session_state.user_id).get()
-    avatar = user_doc.to_dict().get('avatar', '👤') if user_doc.exists else '👤'
-except:
-    avatar = '👤'
+# --- サイドバー：プロフィール設定 ---
+st.sidebar.title("プロフィール設定")
 
-st.sidebar.markdown(f"## {avatar}")
-st.sidebar.write(f"ユーザー名: **{st.session_state.user_name}**")
+# Firestoreから最新のユーザー情報を取得
+user_ref = db.collection('users').document(st.session_state.user_id)
+user_doc = user_ref.get()
+user_data = user_doc.to_dict() if user_doc.exists else {"display_name": st.session_state.user_name, "avatar": "👤"}
+
+# 現在の設定を表示
+current_avatar = user_data.get('avatar', '👤')
+current_name = user_data.get('display_name', st.session_state.user_name)
+
+st.sidebar.markdown(f"# {current_avatar}")
+
+# 編集用フォーム
+with st.sidebar.form("profile_edit_form"):
+    new_name = st.text_input("名前を変更", value=current_name)
+    new_avatar = st.selectbox(
+        "アイコンを変更", 
+        ["🐱", "🐶", "🦊", "🐻", "🐼", "🤖", "🚀", "🌈", "🐥", "👻", "🐯", "🦁", "🐧"],
+        index=["🐱", "🐶", "🦊", "🐻", "🐼", "🤖", "🚀", "🌈", "🐥", "👻", "🐯", "🦁", "🐧"].index(current_avatar) if current_avatar in ["🐱", "🐶", "🦊", "🐻", "🐼", "🤖", "🚀", "🌈", "🐥", "👻", "🐯", "🦁", "🐧"] else 0
+    )
+    if st.form_submit_button("プロフィールを更新"):
+        # Firestoreを更新
+        user_ref.set({
+            "display_name": new_name,
+            "avatar": new_avatar
+        }, merge=True)
+        # セッション状態も更新
+        st.session_state.user_name = new_name
+        st.success("更新しました！")
+        st.rerun()
+
 if st.sidebar.button("ログアウト"):
     st.session_state.logged_in = False
     st.rerun()
 
-# 投稿フォーム
+# --- 投稿フォーム ---
 st.subheader("いまどうしてる？")
 with st.form("tweet_form", clear_on_submit=True):
     content = st.text_area("内容を入力してください", max_chars=140)
     if st.form_submit_button("ツイートする"):
         if content.strip():
-            user_doc = db.collection("users").document(st.session_state.user_id).get()
-            current_avatar = user_doc.to_dict().get("avatar", "👤") if user_doc.exists else "👤"
-            
+            # 投稿時の自分の最新情報を取得
             db.collection("tweets").add({
                 "text": content,
-                "user_name": st.session_state.user_name,
+                "user_name": st.session_state.user_name, # 最新の名前
                 "user_id": st.session_state.user_id,
-                "avatar": current_avatar,
+                "avatar": new_avatar, # 最新のアイコン
                 "created_at": firestore.SERVER_TIMESTAMP
             })
             st.rerun()
 
-# タイムライン表示（5秒ごとに自動更新）
+# --- タイムライン表示 ---
 st.divider()
 st.subheader("最新の投稿")
 
 @st.fragment(run_every=5)
 def show_timeline():
     try:
-        # 最新20件を取得
         tweets = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING).limit(20).stream()
-        
         for tweet in tweets:
             data = tweet.to_dict()
-            tweet_id = tweet.id  # 削除に使うドキュメントID
-            
+            tweet_id = tweet.id
             with st.container(border=True):
                 col1, col2 = st.columns([1, 10])
                 with col1:
@@ -130,22 +147,15 @@ def show_timeline():
                 with col2:
                     st.markdown(f"**{data.get('user_name', '不明')}**")
                     st.write(data.get('text', ''))
-                    
-                    # 下部のレイアウト（時間と削除ボタン）
                     foot1, foot2 = st.columns([2, 1])
                     with foot1:
                         ts = data.get('created_at')
-                        if ts:
-                            st.caption(f"🕒 {ts.strftime('%H:%M:%S')}")
-                    
+                        if ts: st.caption(f"🕒 {ts.strftime('%H:%M:%S')}")
                     with foot2:
-                        # 投稿主IDが、現在ログイン中のIDと一致する場合のみ削除ボタンを表示
                         if data.get('user_id') == st.session_state.user_id:
-                            # ボタンを右寄せにするために小細工なしでシンプルに設置
                             if st.button("🗑️ 削除", key=f"del_{tweet_id}"):
                                 db.collection("tweets").document(tweet_id).delete()
                                 st.rerun()
-            
     except Exception as e:
         st.error(f"読み込みエラー: {e}")
 
