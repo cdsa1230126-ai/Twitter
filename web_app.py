@@ -2,6 +2,7 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 import textwrap
+import re
 
 if not firebase_admin._apps:
     try:
@@ -10,10 +11,18 @@ if not firebase_admin._apps:
         # 1. 基本データの復元
         parts = fb_sec["raw_data"].split(",")
         
-        # 2. 秘密鍵の整形（ここが今回のポイント！）
-        # 前後のヘッダー・フッターを一度取り除き、中身を64文字ごとに改行し直します
-        raw_key = fb_sec["private_key"].replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "").replace("\n", "").strip()
-        formatted_content = "\n".join(textwrap.wrap(raw_key, 64))
+        # 2. 【究極の秘密鍵クレンジング】
+        # まず、ヘッダー/フッター、改行、スペースをすべて排除して「純粋な英数字のみ」の塊にする
+        raw_key = fb_sec["private_key"]
+        raw_key = raw_key.replace("-----BEGIN PRIVATE KEY-----", "")
+        raw_key = raw_key.replace("-----END PRIVATE KEY-----", "")
+        # 改行や空白、タブなどをすべて削除
+        pure_key = re.sub(r"[\s\n\r]", "", raw_key)
+        
+        # 規格（RFC 7468）に従い、64文字ごとに本物の改行を入れる
+        formatted_content = "\n".join(textwrap.wrap(pure_key, 64))
+        
+        # 正しいヘッダーとフッターで包み直す
         fixed_key = f"-----BEGIN PRIVATE KEY-----\n{formatted_content}\n-----END PRIVATE KEY-----\n"
         
         # 3. 辞書の組み立て
@@ -38,6 +47,7 @@ if not firebase_admin._apps:
         st.error(f"初期化失敗: {e}")
         st.stop()
 
+# --- 接続成功 ---
 db = firestore.client()
-st.title("🏆 完全勝利")
-st.success("Firebaseへの接続に成功しました！これですべての準備が整いました。")
+st.title("🏆 ついに完全勝利です！")
+st.success("秘密鍵のフォーマット（64文字ルール）をプログラムで強制解決し、Firestoreへ接続できました")
