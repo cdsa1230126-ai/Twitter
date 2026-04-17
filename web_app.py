@@ -1,35 +1,33 @@
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
-import json
+import base64  # これが必要！
 
-# --- Firebase初期化 (徹底クリーニング・最終手段版) ---
 if not firebase_admin._apps:
     try:
-        # 1. Secretsから取得
-        fb_dict = dict(st.secrets["firebase"])
+        # Secretsから基本情報を取得
+        fb_creds = {
+            "type": "service_account",
+            "project_id": st.secrets["firebase"]["project_id"],
+            "private_key_id": "69a21c56a9c44c9abd9e71103614b8afda3c4819",
+            "client_email": st.secrets["firebase"]["client_email"],
+            "client_id": "101212246496723609810",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": st.secrets["firebase"]["token_uri"],
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{st.secrets['firebase']['client_email']}",
+            "universe_domain": "googleapis.com"
+        }
         
-        if "private_key" in fb_dict:
-            pk = fb_dict["private_key"]
+        # Base64を解凍して秘密鍵を復元
+        encoded_key = st.secrets["firebase"]["private_key_base64"]
+        decoded_key = base64.b64decode(encoded_key).decode("utf-8")
+        fb_creds["private_key"] = decoded_key
             
-            # 2. \n の置換（1行書き・複数行書き両方に対応）
-            pk = pk.replace("\\n", "\n")
-            
-            # 3. 【最重要】InvalidByte(1629, 61) の原因となる末尾のゴミを徹底排除
-            # "-----END PRIVATE KEY-----" のあとの文字をすべて消します
-            end_marker = "-----END PRIVATE KEY-----"
-            if end_marker in pk:
-                pk = pk.split(end_marker)[0] + end_marker
-            
-            # 4. 前後の不要な改行やスペース、変な記号を完全に消す
-            fb_dict["private_key"] = pk.strip()
-            
-        # 5. Firebaseに渡す
-        cred = credentials.Certificate(fb_dict)
+        cred = credentials.Certificate(fb_creds)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        # 具体的に何が起きているか詳細を出すようにしました
-        st.error(f"初期化失敗の詳細: {e}")
+        st.error(f"初期化失敗: {e}")
         st.stop()
 
 db = firestore.client()
