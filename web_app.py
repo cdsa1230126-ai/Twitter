@@ -35,7 +35,7 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 # --- 2. Twitter風 UI の実装 ---
-st.title("𝕏 クローン (iwitter)")
+st.title("Iwitter")
 
 # --- 投稿フォームエリア ---
 # st.formの「clear_on_submit=True」で送信後に文字を消します
