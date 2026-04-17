@@ -116,29 +116,37 @@ with main_col:
                 if st.button("一括登録を実行"):
                     if csv_file is not None:
                         try:
-                            # 文字コードをいくつか試して読み込む
+                            # 1. まずはUTF-8で試す
                             try:
                                 df = pd.read_csv(csv_file, encoding='utf-8')
-                            except UnicodeDecodeError:
-                                # utf-8で失敗したらshift-jisでリトライ
-                                csv_file.seek(0) # 読み込み位置を最初に戻す
-                                df = pd.read_csv(csv_file, encoding='cp932')
+                            except:
+                                # 2. 失敗したら、特殊文字(絵文字)を許可しつつShift-JIS系で読み込む
+                                csv_file.seek(0)
+                                # errors='replace' をつけることで、読み取れない文字を「?」に置き換えて強引に読み込みます
+                                df = pd.read_csv(csv_file, encoding='cp932', errors='replace')
                             
-                            # 1行目が「2026年度34年ゼミ一覧」のようなタイトルの場合、
-                            # 実際のデータが始まるまで行を飛ばす処理が必要な場合があります。
-                            # もしエラーが出る場合は「df = df.iloc[1:]」などで調整します。
-                            
+                            # もし1行目がタイトル（2026年度34年ゼミ一覧）なら、それを飛ばして
+                            # 2行目（ID, ゼミ名...）をヘッダーにする処理
+                            if "ID" not in df.columns:
+                                # 1行目を捨てて、2行目をヘッダーに設定し直す
+                                df.columns = df.iloc[0]
+                                df = df[1:]
+
                             for _, row in df.iterrows():
-                                # row[0]がID、row[1]がゼミ名...
-                                # 空白行をスキップする判定を入れるとより安全です
-                                if pd.isna(row[0]): continue 
+                                # 空白行やタイトル行を完全にスキップ
+                                if pd.isna(row[0]) or str(row[0]) == "ID":
+                                    continue 
                                 
-                                doc_id = str(row[0])
+                                doc_id = str(row[0]).strip()
                                 db.collection("zemis").document(doc_id).set({
-                                    "name": str(row[1]), "prof": str(row[2]),
-                                    "desc": str(row[3]), "msg": str(row[4]),
-                                    "theme": str(row[5]), "content": str(row[6]),
-                                    "format": str(row[7]), "career": str(row[8])
+                                    "name": str(row[1]),
+                                    "prof": str(row[2]),
+                                    "desc": str(row[3]),
+                                    "msg": str(row[4]),
+                                    "theme": str(row[5]),
+                                    "content": str(row[6]),
+                                    "format": str(row[7]),
+                                    "career": str(row[8])
                                 })
                             st.success(f"正常に {len(df)} 件のデータをインポートしました！")
                             st.rerun()
