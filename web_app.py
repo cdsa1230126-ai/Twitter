@@ -116,9 +116,23 @@ with main_col:
                 if st.button("一括登録を実行"):
                     if csv_file is not None:
                         try:
-                            df = pd.read_csv(csv_file)
+                            # 文字コードをいくつか試して読み込む
+                            try:
+                                df = pd.read_csv(csv_file, encoding='utf-8')
+                            except UnicodeDecodeError:
+                                # utf-8で失敗したらshift-jisでリトライ
+                                csv_file.seek(0) # 読み込み位置を最初に戻す
+                                df = pd.read_csv(csv_file, encoding='cp932')
+                            
+                            # 1行目が「2026年度34年ゼミ一覧」のようなタイトルの場合、
+                            # 実際のデータが始まるまで行を飛ばす処理が必要な場合があります。
+                            # もしエラーが出る場合は「df = df.iloc[1:]」などで調整します。
+                            
                             for _, row in df.iterrows():
-                                # ID列をドキュメント名として保存
+                                # row[0]がID、row[1]がゼミ名...
+                                # 空白行をスキップする判定を入れるとより安全です
+                                if pd.isna(row[0]): continue 
+                                
                                 doc_id = str(row[0])
                                 db.collection("zemis").document(doc_id).set({
                                     "name": str(row[1]), "prof": str(row[2]),
