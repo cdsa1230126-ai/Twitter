@@ -236,7 +236,7 @@ with main_col:
                             st.rerun()
 
         st.info("2026年度 3・4年ゼミ一覧。クリックで詳細を表示します。")
-        zemi_docs = db.collection("zemis").order_by(firestore.FieldPath.document_id()).stream()
+        zemi_docs = db.collection("zemis").stream()
         
         for z_doc in zemi_docs:
             z = z_doc.to_dict()
