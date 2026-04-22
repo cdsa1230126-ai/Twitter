@@ -14,22 +14,15 @@ ADMIN_EMAIL = "cdsa1230126@gn.iwasaki.ac.jp"
 
 st.set_page_config(page_title="Iwattar", page_icon=":bird:", layout="wide")
 
-# --- X風デザイン & ボトムナビゲーションのCSS ---
+# --- CSS: ボトムナビゲーションとデザインの固定 ---
 st.markdown(
     """
     <style>
-    .stApp { background-color: #F7F9F9; margin-bottom: 70px; }
-    
-    /* 投稿コンテナ */
-    .tweet-container {
-        background-color: white;
-        padding: 15px;
-        border-bottom: 1px solid #EFF3F4;
-    }
-    .profile-pic { border-radius: 50%; object-fit: cover; border: 1px solid #ddd; }
-    .tweet-img img { border-radius: 16px !important; margin-top: 10px; }
-    
-    /* ボトムナビゲーションバーの固定 */
+    /* 全体の背景と余白 */
+    .stApp { background-color: #F7F9F9; }
+    .main-content { margin-bottom: 100px; } /* メニューに被らないための余白 */
+
+    /* ボトムナビゲーションの固定設定 */
     .fixed-footer {
         position: fixed;
         bottom: 0;
@@ -38,17 +31,28 @@ st.markdown(
         background-color: white;
         border-top: 1px solid #EFF3F4;
         padding: 10px 0;
-        z-index: 999;
+        z-index: 9999;
         display: flex;
         justify-content: space-around;
     }
-    
-    /* Streamlitのデフォルト要素を調整 */
+
+    /* 投稿のデザイン */
+    .tweet-container {
+        background-color: white;
+        padding: 15px;
+        border-bottom: 1px solid #EFF3F4;
+    }
+    .profile-pic { border-radius: 50%; object-fit: cover; border: 1px solid #ddd; }
+    .tweet-img img { border-radius: 16px !important; margin-top: 10px; }
+
+    /* Streamlitの標準ヘッダー/フッターを非表示 */
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 検索ボックスのスタイル */
-    .search-box { margin-bottom: 20px; }
+    /* ボトムバー内のボタンを横並びに配置するための調整 */
+    div[data-testid="stHorizontalBlock"] {
+        background: white;
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -129,44 +133,18 @@ if not st.session_state.logged_in:
                     except Exception as ex: st.error(f"作成失敗: {ex}")
     st.stop()
 
-# ユーザー情報取得
+# ユーザー情報
 user_ref = db.collection('users').document(st.session_state.user_id)
 user_data = user_ref.get().to_dict() or {}
 st.session_state.user_name = user_data.get('display_name', "Guest")
 st.session_state.avatar = user_data.get('avatar_data')
 
-# --- 5. ボトムナビゲーションバー ---
-# Streamlitの st.columns を使って画面下部にボタンを並べる
-st.markdown('<div class="fixed-footer">', unsafe_allow_html=True)
-footer_cols = st.columns(4)
-with footer_cols[0]:
-    if st.button("🏠"): st.session_state.current_page = "🏠 ホーム"; st.session_state.viewing_user_id = None; st.rerun()
-with footer_cols[1]:
-    if st.button("🔍"): st.session_state.current_page = "🔍 検索"; st.rerun()
-with footer_cols[2]:
-    if st.button("👤"): 
-        st.session_state.viewing_user_id = st.session_state.user_id
-        st.session_state.current_page = "👤 マイページ"; st.rerun()
-with footer_cols[3]:
-    if st.button("📢"): st.session_state.current_page = "📢 お知らせ"; st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
-
-# --- 6. メインコンテンツ ---
+# --- 5. メイン画面の構築 ---
+st.markdown('<div class="main-content">', unsafe_allow_html=True)
 page = st.session_state.current_page
-st.title(page)
-
-# サイドバーにはログアウトと管理モードのみ配置
-with st.sidebar:
-    st.write(f"ログイン中: **{st.session_state.user_name}**")
-    if st.button("プロフィール編集"): st.session_state.current_page = "📝 プロフィール編集"; st.rerun()
-    if st.session_state.is_admin_user:
-        st.session_state.admin_mode_on = st.toggle("🛠️ 管理モード", value=st.session_state.admin_mode_on)
-    if st.button("ログアウト"): st.session_state.clear(); st.rerun()
-
-# --- 各ページのロジック ---
+st.header(page)
 
 if page == "🏠 ホーム" or page == "👤 マイページ":
-    # 投稿フォーム（マイページ以外で表示）
     if page == "🏠 ホーム":
         with st.container(border=True):
             txt = st.text_area("いまどうしてる？", max_chars=140, placeholder="メッセージを入力...")
@@ -180,10 +158,12 @@ if page == "🏠 ホーム" or page == "👤 マイページ":
                         "created_at": firestore.SERVER_TIMESTAMP
                     }); st.rerun()
 
-    # 投稿表示クエリ
     q = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING)
     if st.session_state.viewing_user_id:
         q = q.where("user_id", "==", st.session_state.viewing_user_id)
+        if st.button("← タイムラインに戻る"): 
+            st.session_state.viewing_user_id = None
+            st.session_state.current_page = "🏠 ホーム"; st.rerun()
 
     for t in q.limit(20).stream():
         d = t.to_dict()
@@ -193,51 +173,61 @@ if page == "🏠 ホーム" or page == "👤 マイページ":
             av = d.get('avatar_data') or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"
             st.markdown(f'<img src="{av}" class="profile-pic" width="50">', unsafe_allow_html=True)
         with c2:
-            st.markdown(f"**{d.get('user_name')}** <span class='user-handle'>@{d.get('user_id')[:5]}</span>", unsafe_allow_html=True)
-            st.markdown(f'<div class="tweet-text">{d.get("text")}</div>', unsafe_allow_html=True)
-            if d.get('post_image'): st.markdown(f'<div class="tweet-img"><img src="{d.get("post_image")}" width="100%"></div>', unsafe_allow_html=True)
+            st.markdown(f"**{d.get('user_name')}** <span style='color:#536471;'>@{d.get('user_id')[:5]}</span>", unsafe_allow_html=True)
+            st.write(d.get('text'))
+            if d.get('post_image'): st.image(d.get('post_image'))
             if st.session_state.admin_mode_on or d.get('user_id') == st.session_state.user_id:
-                if st.button("🗑️ 削除", key=f"del_{t.id}"): db.collection("tweets").document(t.id).delete(); st.rerun()
+                if st.button("🗑️", key=f"del_{t.id}"): db.collection("tweets").document(t.id).delete(); st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
 elif page == "🔍 検索":
-    search_query = st.text_input("キーワードまたはユーザー名で検索", placeholder="例: こんにちは, 田中, @abcde")
-    if search_query:
-        # クエリ実行（全投稿取得してPython側でフィルタリングするのが小規模では楽）
+    search = st.text_input("ユーザー名やキーワードを入力", placeholder="検索...")
+    if search:
         tweets = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING).limit(50).stream()
-        found = False
         for t in tweets:
             d = t.to_dict()
-            content = d.get('text', "")
-            u_name = d.get('user_name', "")
-            u_id = d.get('user_id', "")
-            
-            # 検索条件：本文 or ユーザー名 or ID(頭5文字)
-            if search_query.lower() in content.lower() or search_query.lower() in u_name.lower() or search_query.replace("@","") in u_id[:5]:
-                found = True
-                st.markdown('<div class="tweet-container">', unsafe_allow_html=True)
-                st.write(f"**{u_name}**: {content}")
-                if st.button("表示", key=f"src_{t.id}"):
-                    st.session_state.viewing_user_id = u_id
-                    st.session_state.current_page = "👤 マイページ"; st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
-        if not found: st.write("見つかりませんでした。")
+            if search.lower() in d.get('text', "").lower() or search.lower() in d.get('user_name', "").lower():
+                with st.container(border=True):
+                    st.write(f"**{d.get('user_name')}**: {d.get('text')}")
+                    if st.button("プロフィールを見る", key=f"view_{t.id}"):
+                        st.session_state.viewing_user_id = d.get('user_id')
+                        st.session_state.current_page = "👤 マイページ"; st.rerun()
 
 elif page == "📢 お知らせ":
     if st.session_state.admin_mode_on:
-        with st.form("news"):
-            nt = st.text_input("お知らせ配信")
-            if st.form_submit_button("送信"):
-                db.collection("news").add({"title": nt, "date": firestore.SERVER_TIMESTAMP}); st.rerun()
+        with st.form("news_form"):
+            new_news = st.text_input("お知らせ内容")
+            if st.form_submit_button("配信"):
+                db.collection("news").add({"title": new_news, "date": firestore.SERVER_TIMESTAMP}); st.rerun()
+    
     for n in db.collection("news").order_by("date", direction=firestore.Query.DESCENDING).stream():
-        d = n.to_dict()
-        st.info(f"{d.get('title')}")
+        st.info(n.to_dict().get('title'))
 
-elif page == "📝 プロフィール編集":
-    with st.form("edit"):
-        new_name = st.text_input("表示名", value=st.session_state.user_name)
-        new_img = st.file_uploader("アイコン変更", type=["jpg", "png", "jpeg"])
+elif page == "📝 プロフィール":
+    with st.form("prof"):
+        n_name = st.text_input("表示名", value=st.session_state.user_name)
+        n_img = st.file_uploader("アイコン画像", type=["jpg", "png", "jpeg"])
         if st.form_submit_button("保存"):
-            upd = {"display_name": new_name}
-            if new_img: upd["avatar_data"] = convert_image_to_base64(new_img, size=(200,200))
-            user_ref.update(upd); st.success("更新完了！"); st.rerun()
+            upd = {"display_name": n_name}
+            if n_img: upd["avatar_data"] = convert_image_to_base64(n_img, size=(200,200))
+            user_ref.update(upd); st.success("更新しました！"); st.rerun()
+    if st.button("ログアウト"): st.session_state.clear(); st.rerun()
+
+st.markdown('</div>', unsafe_allow_html=True) # メインコンテンツ終了
+
+# --- 6. ボトムナビゲーションバーのボタン配置 ---
+st.markdown('<div class="fixed-footer">', unsafe_allow_html=True)
+f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
+with f_col1:
+    if st.button("🏠"): st.session_state.current_page = "🏠 ホーム"; st.session_state.viewing_user_id = None; st.rerun()
+with f_col2:
+    if st.button("🔍"): st.session_state.current_page = "🔍 検索"; st.rerun()
+with f_col3:
+    if st.button("👤"): 
+        st.session_state.viewing_user_id = st.session_state.user_id
+        st.session_state.current_page = "👤 マイページ"; st.rerun()
+with f_col4:
+    if st.button("📢"): st.session_state.current_page = "📢 お知らせ"; st.rerun()
+with f_col5:
+    if st.button("📝"): st.session_state.current_page = "📝 プロフィール"; st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
