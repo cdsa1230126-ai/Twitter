@@ -16,15 +16,10 @@ st.set_page_config(page_title="Iwattar", page_icon=":bird:", layout="wide")
 st.markdown(
     """
     <style>
-    /* 全体のフォントと背景 */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Noto Sans JP', sans-serif; }
     .stApp { background-color: #FFFFFF; }
-
-    /* サイドバー/メニューのスタイル */
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 1px solid #EFF3F4; }
-
-    /* ツイートコンテナ */
     .tweet-card {
         display: flex;
         padding: 12px 16px;
@@ -32,20 +27,12 @@ st.markdown(
         transition: 0.2s;
     }
     .tweet-card:hover { background-color: rgba(0, 0, 0, 0.03); cursor: pointer; }
-
-    /* アイコン */
     .avatar-container { margin-right: 12px; }
     .avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; }
-
-    /* ユーザー情報 */
     .tweet-header { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
     .display-name { font-weight: 700; color: #0F1419; font-size: 15px; }
     .user-handle { color: #536471; font-size: 15px; font-weight: 400; }
-
-    /* 投稿本文 */
     .tweet-content { color: #0F1419; font-size: 15px; line-height: 1.5; white-space: pre-wrap; margin-bottom: 12px; }
-
-    /* 投稿画像（角丸16px） */
     .tweet-media img {
         border-radius: 16px;
         border: 1px solid #EFF3F4;
@@ -54,8 +41,6 @@ st.markdown(
         max-height: 512px;
         object-fit: cover;
     }
-
-    /* ポストボタン（Xブルー） */
     div.stButton > button {
         background-color: #1D9BF0;
         color: white;
@@ -66,8 +51,6 @@ st.markdown(
         width: 100%;
     }
     div.stButton > button:hover { background-color: #1A8CD8; color: white; }
-
-    /* 入力エリア */
     .stTextArea textarea { border: none !important; font-size: 20px !important; }
     </style>
     """,
@@ -86,11 +69,8 @@ if not firebase_admin._apps:
 
         info_dict = {
             "type": "service_account",
-            "project_id": parts[0],
-            "private_key_id": parts[1],
-            "private_key": fixed_key,
-            "client_email": parts[2],
-            "client_id": parts[3],
+            "project_id": parts[0], "private_key_id": parts[1],
+            "private_key": fixed_key, "client_email": parts[2], "client_id": parts[3],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
@@ -100,8 +80,7 @@ if not firebase_admin._apps:
         cred = credentials.Certificate(info_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
-        st.error(f"Firebase接続エラー: {e}")
-        st.stop()
+        st.error(f"Firebase接続エラー: {e}"); st.stop()
 
 db = firestore.client()
 
@@ -116,12 +95,9 @@ def image_to_base64(file, size=(800, 800)):
     return None
 
 # --- 3. セッション・認証 ---
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "current_page" not in st.session_state:
-    st.session_state.current_page = "タイムライン"
-if "view_user" not in st.session_state:
-    st.session_state.view_user = None
+if "logged_in" not in st.session_state: st.session_state.logged_in = False
+if "current_page" not in st.session_state: st.session_state.current_page = "タイムライン"
+if "view_user" not in st.session_state: st.session_state.view_user = None
 
 if not st.session_state.logged_in:
     st.title("Iwattar")
@@ -133,27 +109,20 @@ if not st.session_state.logged_in:
             if st.form_submit_button("ログイン"):
                 try:
                     u = auth.get_user_by_email(e)
-                    st.session_state.logged_in = True
-                    st.session_state.user_id = u.uid
+                    st.session_state.logged_in, st.session_state.user_id = True, u.uid
                     st.session_state.is_admin = (e.strip() == ADMIN_EMAIL.strip())
                     st.rerun()
-                except:
-                    st.error("ログイン失敗。メールアドレスまたはパスワードを確認してください。")
+                except: st.error("ログイン失敗")
     with tab2:
         with st.form("signup"):
-            ne = st.text_input("メール")
-            np = st.text_input("パスワード")
-            nn = st.text_input("表示名")
+            ne, np, nn = st.text_input("メール"), st.text_input("パスワード"), st.text_input("表示名")
             if st.form_submit_button("登録"):
-                try:
-                    user = auth.create_user(email=ne, password=np, display_name=nn)
-                    db.collection('users').document(user.uid).set({"display_name": nn, "avatar": None})
-                    st.success("登録完了！ログインしてください。")
-                except Exception as e:
-                    st.error(f"登録エラー: {e}")
+                user = auth.create_user(email=ne, password=np, display_name=nn)
+                db.collection('users').document(user.uid).set({"display_name": nn, "avatar": None})
+                st.success("完了！")
     st.stop()
 
-# ユーザー情報の取得
+# ユーザー情報
 u_ref = db.collection('users').document(st.session_state.user_id)
 u_data = u_ref.get().to_dict() or {}
 st.session_state.user_name = u_data.get('display_name', "Guest")
@@ -170,7 +139,6 @@ with side:
         st.rerun()
     if st.button(":bust_in_silhouette: プロフィール"):
         st.session_state.view_user = st.session_state.user_id
-        st.session_state.current_page = "タイムライン" # プロフィールもTL形式で表示
         st.rerun()
     if st.button(":bookmark_tabs: ゼミ一覧"):
         st.session_state.current_page = "ゼミ一覧"
@@ -185,20 +153,18 @@ with side:
 with main:
     if st.session_state.current_page == "タイムライン":
         if st.session_state.view_user:
-            st.markdown(f"#### {st.session_state.user_name if st.session_state.view_user == st.session_state.user_id else 'ユーザー'} の投稿")
+            st.markdown(f"#### 投稿一覧")
             if st.button("← 戻る"):
                 st.session_state.view_user = None
                 st.rerun()
         else:
             st.markdown("#### ホーム")
-            # 投稿フォーム
             with st.container():
                 c1, c2 = st.columns([1, 6])
                 with c1:
-                    icon = st.session_state.avatar or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"
-                    st.markdown(f'<img src="{icon}" class="avatar">', unsafe_allow_html=True)
+                    st.markdown(f'<img src="{st.session_state.avatar or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"}" class="avatar">', unsafe_allow_html=True)
                 with c2:
-                    txt = st.text_area("", placeholder="いまどうしてる？", key="tweet_input", label_visibility="collapsed")
+                    txt = st.text_area("", placeholder="いまどうしてる？", label_visibility="collapsed")
                     img_file = st.file_uploader(":frame_with_picture:", type=["jpg", "png"], label_visibility="collapsed")
                     if st.button("ポストする"):
                         if txt.strip():
@@ -208,19 +174,19 @@ with main:
                                 "user_id": st.session_state.user_id,
                                 "avatar": st.session_state.avatar,
                                 "image": image_to_base64(img_file) if img_file else None,
-                                "at": firestore.SERVER_TIMESTAMP
+                                "created_at": firestore.SERVER_TIMESTAMP # ★ここを 'created_at' に修正
                             })
                             st.rerun()
             st.markdown("---")
 
-        # タイムライン取得
-        tweets_query = db.collection("tweets").order_by("at", direction=firestore.Query.DESCENDING)
+        # タイムライン取得（インデックスに合わせる）
+        tweets_query = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING) # ★ここを 'created_at' に修正
         if st.session_state.view_user:
             tweets_query = tweets_query.where("user_id", "==", st.session_state.view_user)
 
         for doc in tweets_query.limit(20).stream():
             d = doc.to_dict()
-            ts = d.get('at')
+            ts = d.get('created_at') # ★ここを 'created_at' に修正
             dt = ts.strftime('%m月%d日 %H:%M') if ts else "なう"
 
             st.markdown(f"""
@@ -238,33 +204,22 @@ with main:
             </div>
             """, unsafe_allow_html=True)
 
-            # 画像と削除ボタンの配置
             col_space, col_main = st.columns([1, 6])
             with col_main:
                 if d.get('image'):
                     st.markdown(f'<div class="tweet-media"><img src="{d.get("image")}"></div>', unsafe_allow_html=True)
-                
-                # 削除権限チェック
                 if st.session_state.get('is_admin') or d.get('user_id') == st.session_state.user_id:
                     if st.button(":wastebasket: 削除", key=f"del_{doc.id}"):
-                        db.collection("tweets").document(doc.id).delete()
-                        st.rerun()
+                        db.collection("tweets").document(doc.id).delete(); st.rerun()
 
     elif st.session_state.current_page == "設定":
         st.subheader("プロフィール編集")
         new_name = st.text_input("表示名", value=st.session_state.user_name)
-        new_avatar_file = st.file_uploader("アイコン画像を選択", type=["jpg", "png"])
-        if st.button("変更を保存"):
-            upd_data = {"display_name": new_name}
-            if new_avatar_file:
-                upd_data["avatar"] = image_to_base64(new_avatar_file, (200, 200))
-            u_ref.update(upd_data)
-            st.success("プロフィールを更新しました！")
-            st.rerun()
-
-    elif st.session_state.current_page == "ゼミ一覧":
-        st.subheader("ゼミ一覧（準備中）")
-        st.info("各ゼミの専用タイムライン機能を開発中です。")
+        new_avatar = st.file_uploader("アイコン画像", type=["jpg", "png"])
+        if st.button("更新"):
+            upd = {"display_name": new_name}
+            if new_avatar: upd["avatar"] = image_to_base64(new_avatar, (200, 200))
+            u_ref.update(upd); st.success("更新しました"); st.rerun()
 
 with trend:
     st.markdown("### いまどうしてる？")
@@ -273,7 +228,5 @@ with trend:
         st.caption("2,430件のポスト")
         st.markdown("**トレンド: ゼミ選考**")
         st.caption("1,102件のポスト")
-        st.markdown("**トレンド: Python学習中**")
-        st.caption("504件のポスト")
     st.markdown("---")
     st.caption("© 2026 Iwattar from Iwazaki Univ.")
