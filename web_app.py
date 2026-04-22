@@ -57,7 +57,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- 1. Firebase初期化 (Secrets利用) ---
+# --- 1. Firebase初期化 ---
 if not firebase_admin._apps:
     try:
         fb_sec = st.secrets["firebase"]
@@ -122,13 +122,12 @@ if not st.session_state.logged_in:
                 st.success("完了！")
     st.stop()
 
-# ユーザー情報
 u_ref = db.collection('users').document(st.session_state.user_id)
 u_data = u_ref.get().to_dict() or {}
 st.session_state.user_name = u_data.get('display_name', "Guest")
 st.session_state.avatar = u_data.get('avatar')
 
-# --- 4. メインレイアウト (3カラム) ---
+# --- 4. メインレイアウト ---
 side, main, trend = st.columns([1, 2.5, 1.2], gap="medium")
 
 with side:
@@ -174,20 +173,23 @@ with main:
                                 "user_id": st.session_state.user_id,
                                 "avatar": st.session_state.avatar,
                                 "image": image_to_base64(img_file) if img_file else None,
-                                "created_at": firestore.SERVER_TIMESTAMP # ★ここを 'created_at' に修正
+                                "created_at": firestore.SERVER_TIMESTAMP
                             })
                             st.rerun()
             st.markdown("---")
 
-        # タイムライン取得（インデックスに合わせる）
-        tweets_query = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING) # ★ここを 'created_at' に修正
+        tweets_query = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING)
         if st.session_state.view_user:
             tweets_query = tweets_query.where("user_id", "==", st.session_state.view_user)
 
         for doc in tweets_query.limit(20).stream():
             d = doc.to_dict()
-            ts = d.get('created_at') # ★ここを 'created_at' に修正
+            ts = d.get('created_at')
             dt = ts.strftime('%m月%d日 %H:%M') if ts else "なう"
+            
+            # --- 安全なID取得処理 (ここを修正) ---
+            raw_uid = d.get('user_id', "unknown")
+            uid_short = str(raw_uid)[:5] if raw_uid else "anon"
 
             st.markdown(f"""
             <div class="tweet-card">
@@ -196,10 +198,10 @@ with main:
                 </div>
                 <div style="flex:1;">
                     <div class="tweet-header">
-                        <span class="display-name">{d.get('user_name')}</span>
-                        <span class="user-handle">@{d.get('user_id')[:5]} · {dt}</span>
+                        <span class="display-name">{d.get('user_name', 'Guest')}</span>
+                        <span class="user-handle">@{uid_short} · {dt}</span>
                     </div>
-                    <div class="tweet-content">{d.get('text')}</div>
+                    <div class="tweet-content">{d.get('text', '')}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
