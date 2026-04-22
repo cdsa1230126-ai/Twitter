@@ -14,53 +14,41 @@ ADMIN_EMAIL = "cdsa1230126@gn.iwasaki.ac.jp"
 
 st.set_page_config(page_title="Iwattar", page_icon=":bird:", layout="wide")
 
-# --- X風デザインのCSS注入 ---
+# --- X風デザイン & ボトムナビゲーションのCSS ---
 st.markdown(
     """
     <style>
-    /* 全体の背景 */
-    .stApp { background-color: #F7F9F9; }
-
+    .stApp { background-color: #F7F9F9; margin-bottom: 70px; }
+    
     /* 投稿コンテナ */
     .tweet-container {
         background-color: white;
         padding: 15px;
         border-bottom: 1px solid #EFF3F4;
-        transition: 0.2s;
     }
-    .tweet-container:hover { background-color: #F7F7F7; }
-
-    /* アイコン */
     .profile-pic { border-radius: 50%; object-fit: cover; border: 1px solid #ddd; }
-
-    /* ポスト画像 */
-    .tweet-img img {
-        border-radius: 16px !important;
-        border: 1px solid #EFF3F4;
-        margin-top: 10px;
+    .tweet-img img { border-radius: 16px !important; margin-top: 10px; }
+    
+    /* ボトムナビゲーションバーの固定 */
+    .fixed-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background-color: white;
+        border-top: 1px solid #EFF3F4;
+        padding: 10px 0;
+        z-index: 999;
+        display: flex;
+        justify-content: space-around;
     }
-
-    /* ボタン（Xの青色） */
-    div.stButton > button {
-        border-radius: 9999px;
-        background-color: #1D9BF0;
-        color: white;
-        border: none;
-        font-weight: bold;
-    }
-    div.stButton > button:hover { background-color: #1A8CD8; color: white; }
-
-    /* 削除ボタン（控えめ） */
-    div.stButton > button[key^="del_"] {
-        background-color: transparent;
-        color: #536471;
-        border: none;
-        font-size: 0.8em;
-    }
-
-    /* テキスト調整 */
-    .user-handle { color: #536471; font-size: 0.9em; margin-left: 5px; }
-    .tweet-text { font-size: 1.05em; color: #0F1419; margin-top: 5px; line-height: 1.4; }
+    
+    /* Streamlitのデフォルト要素を調整 */
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* 検索ボックスのスタイル */
+    .search-box { margin-bottom: 20px; }
     </style>
     """,
     unsafe_allow_html=True
@@ -104,7 +92,7 @@ def convert_image_to_base64(uploaded_file, size=(500, 500)):
 
 # --- 3. セッション管理 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
-if "current_page" not in st.session_state: st.session_state.current_page = "タイムライン"
+if "current_page" not in st.session_state: st.session_state.current_page = "🏠 ホーム"
 if "saved_email" not in st.session_state: st.session_state.saved_email = ""
 if "viewing_user_id" not in st.session_state: st.session_state.viewing_user_id = None
 
@@ -147,103 +135,109 @@ user_data = user_ref.get().to_dict() or {}
 st.session_state.user_name = user_data.get('display_name', "Guest")
 st.session_state.avatar = user_data.get('avatar_data')
 
-# --- 5. レイアウト ---
-side_col, main_col, nav_col = st.columns([2, 5, 2])
+# --- 5. ボトムナビゲーションバー ---
+# Streamlitの st.columns を使って画面下部にボタンを並べる
+st.markdown('<div class="fixed-footer">', unsafe_allow_html=True)
+footer_cols = st.columns(4)
+with footer_cols[0]:
+    if st.button("🏠"): st.session_state.current_page = "🏠 ホーム"; st.session_state.viewing_user_id = None; st.rerun()
+with footer_cols[1]:
+    if st.button("🔍"): st.session_state.current_page = "🔍 検索"; st.rerun()
+with footer_cols[2]:
+    if st.button("👤"): 
+        st.session_state.viewing_user_id = st.session_state.user_id
+        st.session_state.current_page = "👤 マイページ"; st.rerun()
+with footer_cols[3]:
+    if st.button("📢"): st.session_state.current_page = "📢 お知らせ"; st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
 
-with side_col:
-    st.title("Iwattar")
-    if st.session_state.avatar:
-        st.markdown(f'<img src="{st.session_state.avatar}" class="profile-pic" width="80">', unsafe_allow_html=True)
-    else:
-        st.markdown('👤', unsafe_allow_html=True)
-    st.write(f"**{st.session_state.user_name}**")
-    if st.button("プロフィールを編集"): st.session_state.current_page = "プロフィール編集"; st.rerun()
+# --- 6. メインコンテンツ ---
+page = st.session_state.current_page
+st.title(page)
+
+# サイドバーにはログアウトと管理モードのみ配置
+with st.sidebar:
+    st.write(f"ログイン中: **{st.session_state.user_name}**")
+    if st.button("プロフィール編集"): st.session_state.current_page = "📝 プロフィール編集"; st.rerun()
+    if st.session_state.is_admin_user:
+        st.session_state.admin_mode_on = st.toggle("🛠️ 管理モード", value=st.session_state.admin_mode_on)
     if st.button("ログアウト"): st.session_state.clear(); st.rerun()
 
-with nav_col:
-    st.markdown("### メニュー")
-    if st.button("タイムライン"): st.session_state.viewing_user_id = None; st.session_state.current_page = "タイムライン"; st.rerun()
-    if st.button("マイページ"):
-        st.session_state.viewing_user_id = st.session_state.user_id
-        st.session_state.current_page = "ユーザー投稿"; st.rerun()
-    if st.button("ゼミ一覧"): st.session_state.current_page = "ゼミ一覧"; st.rerun()
-    if st.button("お知らせ"): st.session_state.current_page = "お知らせ"; st.rerun()
-    if st.session_state.is_admin_user:
-        st.session_state.admin_mode_on = st.toggle("管理モード", value=st.session_state.admin_mode_on)
+# --- 各ページのロジック ---
 
-with main_col:
-    page = st.session_state.current_page
+if page == "🏠 ホーム" or page == "👤 マイページ":
+    # 投稿フォーム（マイページ以外で表示）
+    if page == "🏠 ホーム":
+        with st.container(border=True):
+            txt = st.text_area("いまどうしてる？", max_chars=140, placeholder="メッセージを入力...")
+            img = st.file_uploader("画像を添付", type=["jpg", "png", "jpeg"], label_visibility="collapsed")
+            if st.button("ポスト"):
+                if txt.strip():
+                    db.collection("tweets").add({
+                        "text": txt, "user_name": st.session_state.user_name,
+                        "user_id": st.session_state.user_id, "avatar_data": st.session_state.avatar,
+                        "post_image": convert_image_to_base64(img) if img else None,
+                        "created_at": firestore.SERVER_TIMESTAMP
+                    }); st.rerun()
 
-    # --- プロフィール編集 ---
-    if page == "プロフィール編集":
-        st.header("プロフィール編集")
-        with st.form("edit_profile"):
-            new_name = st.text_input("表示名", value=st.session_state.user_name)
-            new_img = st.file_uploader("アイコンを変更", type=["jpg", "png", "jpeg"])
-            if st.form_submit_button("保存"):
-                upd = {"display_name": new_name}
-                if new_img: upd["avatar_data"] = convert_image_to_base64(new_img, size=(200,200))
-                user_ref.update(upd); st.success("更新！"); st.rerun()
-        if st.button("戻る"): st.session_state.current_page = "タイムライン"; st.rerun()
+    # 投稿表示クエリ
+    q = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING)
+    if st.session_state.viewing_user_id:
+        q = q.where("user_id", "==", st.session_state.viewing_user_id)
 
-    # --- タイムライン / ユーザー投稿 ---
-    elif page in ["タイムライン", "ユーザー投稿"]:
-        st.header("ホーム" if page == "タイムライン" else f"{st.session_state.user_name}の投稿")
+    for t in q.limit(20).stream():
+        d = t.to_dict()
+        st.markdown('<div class="tweet-container">', unsafe_allow_html=True)
+        c1, c2 = st.columns([1, 8])
+        with c1:
+            av = d.get('avatar_data') or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"
+            st.markdown(f'<img src="{av}" class="profile-pic" width="50">', unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"**{d.get('user_name')}** <span class='user-handle'>@{d.get('user_id')[:5]}</span>", unsafe_allow_html=True)
+            st.markdown(f'<div class="tweet-text">{d.get("text")}</div>', unsafe_allow_html=True)
+            if d.get('post_image'): st.markdown(f'<div class="tweet-img"><img src="{d.get("post_image")}" width="100%"></div>', unsafe_allow_html=True)
+            if st.session_state.admin_mode_on or d.get('user_id') == st.session_state.user_id:
+                if st.button("🗑️ 削除", key=f"del_{t.id}"): db.collection("tweets").document(t.id).delete(); st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        if page == "タイムライン":
-            with st.container(border=True):
-                txt = st.text_area("いまどうしてる？", max_chars=140, placeholder="ここにメッセージを入力...")
-                img = st.file_uploader("画像を添付", type=["jpg", "png", "jpeg"], label_visibility="collapsed")
-                if st.button("ポスト"):
-                    if txt.strip():
-                        db.collection("tweets").add({
-                            "text": txt, "user_name": st.session_state.user_name,
-                            "user_id": st.session_state.user_id, "avatar_data": st.session_state.avatar,
-                            "post_image": convert_image_to_base64(img) if img else None,
-                            "created_at": firestore.SERVER_TIMESTAMP
-                        }); st.rerun()
-
-        # クエリ
-        q = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING)
-        if st.session_state.viewing_user_id:
-            q = q.where("user_id", "==", st.session_state.viewing_user_id)
-            if st.button("← タイムラインに戻る"): st.session_state.viewing_user_id = None; st.rerun()
-
-        for t in q.limit(20).stream():
+elif page == "🔍 検索":
+    search_query = st.text_input("キーワードまたはユーザー名で検索", placeholder="例: こんにちは, 田中, @abcde")
+    if search_query:
+        # クエリ実行（全投稿取得してPython側でフィルタリングするのが小規模では楽）
+        tweets = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING).limit(50).stream()
+        found = False
+        for t in tweets:
             d = t.to_dict()
-            ts = d.get('created_at')
-            ts_str = ts.strftime('%m/%d %H:%M') if ts else ""
+            content = d.get('text', "")
+            u_name = d.get('user_name', "")
+            u_id = d.get('user_id', "")
+            
+            # 検索条件：本文 or ユーザー名 or ID(頭5文字)
+            if search_query.lower() in content.lower() or search_query.lower() in u_name.lower() or search_query.replace("@","") in u_id[:5]:
+                found = True
+                st.markdown('<div class="tweet-container">', unsafe_allow_html=True)
+                st.write(f"**{u_name}**: {content}")
+                if st.button("表示", key=f"src_{t.id}"):
+                    st.session_state.viewing_user_id = u_id
+                    st.session_state.current_page = "👤 マイページ"; st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+        if not found: st.write("見つかりませんでした。")
 
-            st.markdown('<div class="tweet-container">', unsafe_allow_html=True)
-            c1, c2 = st.columns([1, 8])
-            with c1:
-                av = d.get('avatar_data') if d.get('avatar_data') else "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"
-                st.markdown(f'<img src="{av}" class="profile-pic" width="50">', unsafe_allow_html=True)
-            with c2:
-                st.markdown(f"**{d.get('user_name')}** <span class='user-handle'>@{d.get('user_id')[:5]} · {ts_str}</span>", unsafe_allow_html=True)
-                st.markdown(f'<div class="tweet-text">{d.get("text")}</div>', unsafe_allow_html=True)
-                if d.get('post_image'):
-                    st.markdown(f'<div class="tweet-img"><img src="{d.get("post_image")}" width="100%"></div>', unsafe_allow_html=True)
+elif page == "📢 お知らせ":
+    if st.session_state.admin_mode_on:
+        with st.form("news"):
+            nt = st.text_input("お知らせ配信")
+            if st.form_submit_button("送信"):
+                db.collection("news").add({"title": nt, "date": firestore.SERVER_TIMESTAMP}); st.rerun()
+    for n in db.collection("news").order_by("date", direction=firestore.Query.DESCENDING).stream():
+        d = n.to_dict()
+        st.info(f"{d.get('title')}")
 
-                if st.session_state.admin_mode_on or d.get('user_id') == st.session_state.user_id:
-                    if st.button("🗑️ 削除", key=f"del_{t.id}"):
-                        db.collection("tweets").document(t.id).delete(); st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    # --- ゼミ一覧 ---
-    elif page == "ゼミ一覧":
-        st.header("ゼミ一覧")
-        for z in db.collection("zemis").stream():
-            zd = z.to_dict()
-            with st.container(border=True):
-                st.subheader(f"{z.id} {zd.get('name')}")
-                st.write(f"教員: {zd.get('prof')}")
-                with st.expander("詳細"): st.write(f"テーマ: {zd.get('theme')}\n\n進路: {zd.get('career')}")
-
-    # --- お知らせ ---
-    elif page == "お知らせ":
-        st.header("学校からのお知らせ")
-        for n in db.collection("news").order_by("date", direction=firestore.Query.DESCENDING).stream():
-            d = n.to_dict()
-            dt = d.get('date').strftime('%Y/%m/%d') if d.get('date') else ""
-            st.info(f"【{dt}】 {d.get('title')}")
+elif page == "📝 プロフィール編集":
+    with st.form("edit"):
+        new_name = st.text_input("表示名", value=st.session_state.user_name)
+        new_img = st.file_uploader("アイコン変更", type=["jpg", "png", "jpeg"])
+        if st.form_submit_button("保存"):
+            upd = {"display_name": new_name}
+            if new_img: upd["avatar_data"] = convert_image_to_base64(new_img, size=(200,200))
+            user_ref.update(upd); st.success("更新完了！"); st.rerun()
