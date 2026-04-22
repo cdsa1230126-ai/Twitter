@@ -188,8 +188,7 @@ elif st.session_state.current_page == "profile":
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 6. 完全固定ボトムナビゲーション (ここが常に表示されるエリア) ---
-# main-contentの外側に配置することで、スクロールに依存せず画面に固定されます
+# --- 6. 完全固定ボトムナビゲーション (常に画面最下部に表示) ---
 st.markdown('<div class="fixed-footer">', unsafe_allow_html=True)
 c1, c2, c3, c4 = st.columns(4)
 
