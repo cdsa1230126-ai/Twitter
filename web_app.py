@@ -6,6 +6,8 @@ import base64
 import pandas as pd
 from io import BytesIO
 from PIL import Image
+import textwrap
+import re
 
 # --- 設定：管理者のメールアドレス ---
 ADMIN_EMAIL = "cdsa1230126@gn.iwasaki.ac.jp" 
@@ -24,11 +26,34 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- 1. Firebase初期化 ---
+# --- 1. Firebase初期化 (最強の洗浄ロジック搭載) ---
 if not firebase_admin._apps:
     try:
-        json_string = st.secrets["firebase"]["service_account_json"]
-        info_dict = json.loads(json_string)
+        fb_sec = st.secrets["firebase"]
+        
+        # カンマ区切りのraw_dataから基本情報を復元
+        parts = fb_sec["raw_data"].split(",")
+        
+        # 秘密鍵の洗浄と整形 (ASN.1 parsing error 対策)
+        raw_key = fb_sec["private_key"].replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "")
+        pure_key = re.sub(r"[^A-Za-z0-9+/=]", "", raw_key)
+        formatted_content = "\n".join(textwrap.wrap(pure_key, 64))
+        fixed_key = f"-----BEGIN PRIVATE KEY-----\n{formatted_content}\n-----END PRIVATE KEY-----\n"
+        
+        info_dict = {
+            "type": "service_account",
+            "project_id": parts[0],
+            "private_key_id": parts[1],
+            "private_key": fixed_key,
+            "client_email": parts[2],
+            "client_id": parts[3],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{parts[2]}",
+            "universe_domain": "googleapis.com"
+        }
+        
         cred = credentials.Certificate(info_dict)
         firebase_admin.initialize_app(cred)
     except Exception as e:
@@ -53,10 +78,11 @@ if "logged_in" not in st.session_state:
 if "current_page" not in st.session_state:
     st.session_state.current_page = "タイムライン"
 
-# --- 4. ログイン処理 ---
+# --- 4. ログイン・アカウント作成処理 ---
 if not st.session_state.logged_in:
     st.title("Iwattar")
     tab1, tab2 = st.tabs(["ログイン", "アカウント作成"])
+    
     with tab1:
         with st.form("login"):
             e = st.text_input("メールアドレス")
@@ -68,10 +94,44 @@ if not st.session_state.logged_in:
                     st.session_state.user_id = u.uid
                     st.session_state.is_admin_user = (e.strip() == ADMIN_EMAIL.strip())
                     st.session_state.admin_mode_on = st.session_state.is_admin_user
+                    
                     udoc = db.collection('users').document(u.uid).get()
-                    st.session_state.user_name = udoc.to_dict().get('display_name', u.display_name) if udoc.exists else u.display_name
+                    if udoc.exists:
+                        st.session_state.user_name = udoc.to_dict().get('display_name', e.split('@')[0])
+                    else:
+                        st.session_state.user_name = u.display_name if u.display_name else e.split('@')[0]
                     st.rerun()
-                except: st.error("ログイン失敗。アドレスかパスワードが違います。")
+                except:
+                    st.error("ログイン失敗。アドレスが登録されていないか、エラーが発生しました。")
+
+    with tab2:
+        with st.form("signup"):
+            new_email = st.text_input("メールアドレス (アカウント作成)")
+            new_password = st.text_input("パスワード (6文字以上)", type="password")
+            new_name = st.text_input("表示名")
+            
+            if st.form_submit_button("新規登録"):
+                if len(new_password) < 6:
+                    st.error("パスワードは6文字以上にしてください。")
+                elif not new_email or not new_name:
+                    st.error("すべての項目を入力してください。")
+                else:
+                    try:
+                        # 1. Firebase Authにユーザー作成
+                        user = auth.create_user(
+                            email=new_email,
+                            password=new_password,
+                            display_name=new_name
+                        )
+                        # 2. Firestoreにユーザー初期データを保存
+                        db.collection('users').document(user.uid).set({
+                            "display_name": new_name,
+                            "email": new_email,
+                            "avatar_data": None
+                        })
+                        st.success("アカウントを作成しました！ログインタブからログインしてください。")
+                    except Exception as ex:
+                        st.error(f"作成失敗: {ex}")
     st.stop()
 
 # --- 5. メインレイアウト ---
@@ -107,7 +167,6 @@ with main_col:
 
     # --- ゼミ一覧ページ ---
     if page == "ゼミ一覧":
-        # 管理者かつ管理者モードONの場合のみアップロード機能を表示
         if st.session_state.get('is_admin_user') and st.session_state.get('admin_mode_on'):
             with st.expander("📂 【管理者限定】スプレッドシート(CSV)から一括登録"):
                 st.write("A列:ID, B列:ゼミ名, C列:教員... の順のCSVをアップロードしてください。")
@@ -116,42 +175,33 @@ with main_col:
                 if st.button("一括登録を実行"):
                     if csv_file is not None:
                         try:
-                            # 1. 読み込み時のエラーを回避するため、まずは「列数を固定せず」に読み込む
-                            # header=None にし、名前を付けずに一旦全データを読み込む
                             try:
                                 df_raw = pd.read_csv(csv_file, encoding='utf-8', header=None, on_bad_lines='skip')
                             except:
                                 csv_file.seek(0)
                                 df_raw = pd.read_csv(csv_file, encoding='cp932', encoding_errors='replace', header=None, on_bad_lines='skip')
                             
-                            # --- 「ID」という文字が含まれるヘッダー行を特定する ---
                             header_idx = None
                             for i in range(len(df_raw)):
-                                # 最初の列付近に "ID" という文字列があるか探す
                                 row_str = str(df_raw.iloc[i, 0])
                                 if "ID" in row_str:
                                     header_idx = i
                                     break
                             
                             if header_idx is None:
-                                st.error("CSV内に 'ID' という見出しが見つかりませんでした。1行目または2行目の最初の列に 'ID' と入力されているか確認してください。")
+                                st.error("CSV内に 'ID' という見出しが見つかりませんでした。")
                                 st.stop()
 
-                            # ヘッダー行を適用して、それ以降をデータとする
                             df = df_raw.iloc[header_idx+1:].copy()
                             df.columns = df_raw.iloc[header_idx]
 
-                            # --- Firestore への登録処理 ---
                             count = 0
                             for _, row in df.iterrows():
-                                # IDが空、またはIDという文字そのものの行は飛ばす
                                 val_id = str(row[0]).strip()
                                 if pd.isna(row[0]) or val_id == "" or val_id == "ID" or val_id == "nan":
                                     continue 
                                 
-                                doc_id = val_id
-                                # スプレッドシートの列順（左から 0, 1, 2...）で確実に取得
-                                db.collection("zemis").document(doc_id).set({
+                                db.collection("zemis").document(val_id).set({
                                     "name": str(row[1]),
                                     "prof": str(row[2]),
                                     "desc": str(row[3]),
@@ -162,15 +212,11 @@ with main_col:
                                     "career": str(row[8])
                                 })
                                 count += 1
-                                
                             st.success(f"正常に {count} 件のゼミデータをインポートしました！")
                             st.rerun()
                         except Exception as ex:
                             st.error(f"読み込み失敗: {ex}")
-                    else:
-                        st.warning("ファイルが選択されていません。")
 
-        # ゼミ情報の表示（全ユーザー共通）
         z_items = db.collection("zemis").stream()
         for zi in z_items:
             z = zi.to_dict()
@@ -182,7 +228,6 @@ with main_col:
                     st.write(f"**内容:** {z.get('content')}")
                     st.write(f"**進路:** {z.get('career')}")
                 
-                # 削除ボタンも管理者のみ
                 if st.session_state.get('admin_mode_on'):
                     if st.button(f"🗑️ {zi.id} を削除", key=f"del_{zi.id}"):
                         db.collection("zemis").document(zi.id).delete()
@@ -203,7 +248,6 @@ with main_col:
                     })
                     st.rerun()
         
-        # 投稿表示（最新15件）
         tweets = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING).limit(15).stream()
         for t in tweets:
             d = t.to_dict()
