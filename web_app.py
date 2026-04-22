@@ -26,15 +26,13 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- 1. Firebase初期化 (最強の洗浄ロジック搭載) ---
+# --- 1. Firebase初期化 (秘密鍵洗浄ロジック) ---
 if not firebase_admin._apps:
     try:
         fb_sec = st.secrets["firebase"]
-        
-        # カンマ区切りのraw_dataから基本情報を復元
         parts = fb_sec["raw_data"].split(",")
         
-        # 秘密鍵の洗浄と整形 (ASN.1 parsing error 対策)
+        # 秘密鍵の整形
         raw_key = fb_sec["private_key"].replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "")
         pure_key = re.sub(r"[^A-Za-z0-9+/=]", "", raw_key)
         formatted_content = "\n".join(textwrap.wrap(pure_key, 64))
@@ -77,6 +75,8 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "current_page" not in st.session_state:
     st.session_state.current_page = "タイムライン"
+if "saved_email" not in st.session_state:
+    st.session_state.saved_email = ""
 
 # --- 4. ログイン・アカウント作成処理 ---
 if not st.session_state.logged_in:
@@ -85,13 +85,15 @@ if not st.session_state.logged_in:
     
     with tab1:
         with st.form("login"):
-            e = st.text_input("メールアドレス")
+            # 保存されているメアドがあれば初期値に入れる
+            e = st.text_input("メールアドレス", value=st.session_state.saved_email)
             p = st.text_input("パスワード", type="password")
             if st.form_submit_button("ログイン"):
                 try:
                     u = auth.get_user_by_email(e)
                     st.session_state.logged_in = True
                     st.session_state.user_id = u.uid
+                    st.session_state.saved_email = e  # 次回のためにメアド保存
                     st.session_state.is_admin_user = (e.strip() == ADMIN_EMAIL.strip())
                     st.session_state.admin_mode_on = st.session_state.is_admin_user
                     
@@ -117,22 +119,20 @@ if not st.session_state.logged_in:
                     st.error("すべての項目を入力してください。")
                 else:
                     try:
-                        # 1. Firebase Authにユーザー作成
-                        user = auth.create_user(
-                            email=new_email,
-                            password=new_password,
-                            display_name=new_name
-                        )
-                        # 2. Firestoreにユーザー初期データを保存
+                        user = auth.create_user(email=new_email, password=new_password, display_name=new_name)
                         db.collection('users').document(user.uid).set({
-                            "display_name": new_name,
-                            "email": new_email,
-                            "avatar_data": None
+                            "display_name": new_name, "email": new_email, "avatar_data": None
                         })
-                        st.success("アカウントを作成しました！ログインタブからログインしてください。")
+                        st.success("作成成功！ログインタブからログインしてください。")
+                        st.session_state.saved_email = new_email
                     except Exception as ex:
                         st.error(f"作成失敗: {ex}")
     st.stop()
+
+# --- 4.5 ログイン情報の安全性チェック (AttributeError防止) ---
+if "user_name" not in st.session_state or "user_id" not in st.session_state:
+    st.session_state.logged_in = False
+    st.rerun()
 
 # --- 5. メインレイアウト ---
 side_col, main_col, nav_col = st.columns([2, 5, 2])
@@ -168,75 +168,57 @@ with main_col:
     # --- ゼミ一覧ページ ---
     if page == "ゼミ一覧":
         if st.session_state.get('is_admin_user') and st.session_state.get('admin_mode_on'):
-            with st.expander("📂 【管理者限定】スプレッドシート(CSV)から一括登録"):
-                st.write("A列:ID, B列:ゼミ名, C列:教員... の順のCSVをアップロードしてください。")
-                csv_file = st.file_uploader("ファイルを選択 (.csv または .xlsx)", type=["csv", "xlsx"])
-                
+            with st.expander("📂 【管理者限定】CSVから一括登録"):
+                csv_file = st.file_uploader("CSVファイルを選択", type=["csv", "xlsx"])
                 if st.button("一括登録を実行"):
                     if csv_file is not None:
                         try:
                             try:
-                                df_raw = pd.read_csv(csv_file, encoding='utf-8', header=None, on_bad_lines='skip')
+                                df_raw = pd.read_csv(csv_file, encoding='utf-8', header=None)
                             except:
                                 csv_file.seek(0)
-                                df_raw = pd.read_csv(csv_file, encoding='cp932', encoding_errors='replace', header=None, on_bad_lines='skip')
+                                df_raw = pd.read_csv(csv_file, encoding='cp932', header=None)
                             
                             header_idx = None
                             for i in range(len(df_raw)):
-                                row_str = str(df_raw.iloc[i, 0])
-                                if "ID" in row_str:
+                                if "ID" in str(df_raw.iloc[i, 0]):
                                     header_idx = i
                                     break
                             
-                            if header_idx is None:
-                                st.error("CSV内に 'ID' という見出しが見つかりませんでした。")
-                                st.stop()
-
-                            df = df_raw.iloc[header_idx+1:].copy()
-                            df.columns = df_raw.iloc[header_idx]
-
-                            count = 0
-                            for _, row in df.iterrows():
-                                val_id = str(row[0]).strip()
-                                if pd.isna(row[0]) or val_id == "" or val_id == "ID" or val_id == "nan":
-                                    continue 
-                                
-                                db.collection("zemis").document(val_id).set({
-                                    "name": str(row[1]),
-                                    "prof": str(row[2]),
-                                    "desc": str(row[3]),
-                                    "msg": str(row[4]),
-                                    "theme": str(row[5]),
-                                    "content": str(row[6]),
-                                    "format": str(row[7]),
-                                    "career": str(row[8])
-                                })
-                                count += 1
-                            st.success(f"正常に {count} 件のゼミデータをインポートしました！")
-                            st.rerun()
-                        except Exception as ex:
-                            st.error(f"読み込み失敗: {ex}")
+                            if header_idx is not None:
+                                df = df_raw.iloc[header_idx+1:].copy()
+                                count = 0
+                                for _, row in df.iterrows():
+                                    val_id = str(row[0]).strip()
+                                    if val_id and val_id != "nan":
+                                        db.collection("zemis").document(val_id).set({
+                                            "name": str(row[1]), "prof": str(row[2]), "desc": str(row[3]),
+                                            "msg": str(row[4]), "theme": str(row[5]), "content": str(row[6]),
+                                            "format": str(row[7]), "career": str(row[8])
+                                        })
+                                        count += 1
+                                st.success(f"{count}件インポート完了")
+                                st.rerun()
+                        except Exception as ex: st.error(f"失敗: {ex}")
 
         z_items = db.collection("zemis").stream()
         for zi in z_items:
             z = zi.to_dict()
             with st.container(border=True):
                 st.subheader(f"{zi.id} {z.get('name')}")
-                st.markdown(f"**担当教員：{z.get('prof')}**")
-                with st.expander("詳細なゼミ活動を見る"):
+                st.write(f"**教員:** {z.get('prof')}")
+                with st.expander("詳細"):
                     st.write(f"**テーマ:** {z.get('theme')}")
                     st.write(f"**内容:** {z.get('content')}")
-                    st.write(f"**進路:** {z.get('career')}")
-                
                 if st.session_state.get('admin_mode_on'):
-                    if st.button(f"🗑️ {zi.id} を削除", key=f"del_{zi.id}"):
+                    if st.button(f"🗑️ {zi.id}", key=f"del_{zi.id}"):
                         db.collection("zemis").document(zi.id).delete()
                         st.rerun()
 
     # --- タイムラインページ ---
     elif page == "タイムライン":
         with st.form("post_form", clear_on_submit=True):
-            content = st.text_area("内容", max_chars=140)
+            content = st.text_area("いまどうしてる？", max_chars=140)
             post_img = st.file_uploader("画像", type=["jpg", "png", "jpeg"])
             if st.form_submit_button("ポスト"):
                 if content.strip():
@@ -273,7 +255,6 @@ with main_col:
                 if st.form_submit_button("配信"):
                     db.collection("news").add({"title": n_t, "date": firestore.SERVER_TIMESTAMP})
                     st.rerun()
-        
         news = db.collection("news").order_by("date", direction=firestore.Query.DESCENDING).stream()
         for n in news:
             st.info(f"📅 {n.to_dict().get('title')}")
