@@ -14,15 +14,14 @@ ADMIN_EMAIL = "cdsa1230126@gn.iwasaki.ac.jp"
 
 st.set_page_config(page_title="Iwattar", page_icon=":bird:", layout="wide")
 
-# --- CSS: ボトムナビゲーションとデザインの固定 ---
+# --- CSS: デザイン設定 ---
 st.markdown(
     """
     <style>
-    /* 全体の背景と余白 */
     .stApp { background-color: #F7F9F9; }
-    .main-content { margin-bottom: 100px; } /* メニューに被らないための余白 */
+    .main-content { margin-bottom: 100px; }
 
-    /* ボトムナビゲーションの固定設定 */
+    /* ボトムナビゲーション */
     .fixed-footer {
         position: fixed;
         bottom: 0;
@@ -43,16 +42,9 @@ st.markdown(
         border-bottom: 1px solid #EFF3F4;
     }
     .profile-pic { border-radius: 50%; object-fit: cover; border: 1px solid #ddd; }
-    .tweet-img img { border-radius: 16px !important; margin-top: 10px; }
-
-    /* Streamlitの標準ヘッダー/フッターを非表示 */
+    
     footer {visibility: hidden;}
     header {visibility: hidden;}
-    
-    /* ボトムバー内のボタンを横並びに配置するための調整 */
-    div[data-testid="stHorizontalBlock"] {
-        background: white;
-    }
     </style>
     """,
     unsafe_allow_html=True
@@ -87,11 +79,13 @@ db = firestore.client()
 # --- 2. 共通関数 ---
 def convert_image_to_base64(uploaded_file, size=(500, 500)):
     if uploaded_file is not None:
-        img = Image.open(uploaded_file)
-        img.thumbnail(size)
-        buffered = BytesIO()
-        img.save(buffered, format="PNG")
-        return f"data:image/png;base64,{base64.b64encode(buffered.getvalue()).decode()}"
+        try:
+            img = Image.open(uploaded_file)
+            img.thumbnail(size)
+            buffered = BytesIO()
+            img.save(buffered, format="PNG")
+            return f"data:image/png;base64,{base64.b64encode(buffered.getvalue()).decode()}"
+        except: return None
     return None
 
 # --- 3. セッション管理 ---
@@ -133,21 +127,22 @@ if not st.session_state.logged_in:
                     except Exception as ex: st.error(f"作成失敗: {ex}")
     st.stop()
 
-# ユーザー情報
+# ユーザー情報取得
 user_ref = db.collection('users').document(st.session_state.user_id)
 user_data = user_ref.get().to_dict() or {}
 st.session_state.user_name = user_data.get('display_name', "Guest")
 st.session_state.avatar = user_data.get('avatar_data')
 
-# --- 5. メイン画面の構築 ---
+# --- 5. メイン画面 ---
 st.markdown('<div class="main-content">', unsafe_allow_html=True)
 page = st.session_state.current_page
 st.header(page)
 
+# ページ切り替えロジック
 if page == "🏠 ホーム" or page == "👤 マイページ":
     if page == "🏠 ホーム":
         with st.container(border=True):
-            txt = st.text_area("いまどうしてる？", max_chars=140, placeholder="メッセージを入力...")
+            txt = st.text_area("いまどうしてる？", max_chars=140)
             img = st.file_uploader("画像を添付", type=["jpg", "png", "jpeg"], label_visibility="collapsed")
             if st.button("ポスト"):
                 if txt.strip():
@@ -158,76 +153,80 @@ if page == "🏠 ホーム" or page == "👤 マイページ":
                         "created_at": firestore.SERVER_TIMESTAMP
                     }); st.rerun()
 
+    # 投稿取得
     q = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING)
     if st.session_state.viewing_user_id:
         q = q.where("user_id", "==", st.session_state.viewing_user_id)
-        if st.button("← タイムラインに戻る"): 
-            st.session_state.viewing_user_id = None
-            st.session_state.current_page = "🏠 ホーム"; st.rerun()
+        if st.button("← 戻る"): 
+            st.session_state.viewing_user_id = None; st.session_state.current_page = "🏠 ホーム"; st.rerun()
 
     for t in q.limit(20).stream():
         d = t.to_dict()
+        u_id_raw = d.get('user_id', "")
+        u_id_short = u_id_raw[:5] if u_id_raw else "???" # 安全対策
+        
         st.markdown('<div class="tweet-container">', unsafe_allow_html=True)
         c1, c2 = st.columns([1, 8])
         with c1:
             av = d.get('avatar_data') or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"
             st.markdown(f'<img src="{av}" class="profile-pic" width="50">', unsafe_allow_html=True)
         with c2:
-            st.markdown(f"**{d.get('user_name')}** <span style='color:#536471;'>@{d.get('user_id')[:5]}</span>", unsafe_allow_html=True)
-            st.write(d.get('text'))
+            st.markdown(f"**{d.get('user_name', '不明')}** <span style='color:#536471;'>@{u_id_short}</span>", unsafe_allow_html=True)
+            st.write(d.get('text', ""))
             if d.get('post_image'): st.image(d.get('post_image'))
-            if st.session_state.admin_mode_on or d.get('user_id') == st.session_state.user_id:
+            if st.session_state.admin_mode_on or u_id_raw == st.session_state.user_id:
                 if st.button("🗑️", key=f"del_{t.id}"): db.collection("tweets").document(t.id).delete(); st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
 elif page == "🔍 検索":
-    search = st.text_input("ユーザー名やキーワードを入力", placeholder="検索...")
+    search = st.text_input("キーワード検索")
     if search:
-        tweets = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING).limit(50).stream()
+        tweets = db.collection("tweets").limit(50).stream()
         for t in tweets:
             d = t.to_dict()
             if search.lower() in d.get('text', "").lower() or search.lower() in d.get('user_name', "").lower():
                 with st.container(border=True):
                     st.write(f"**{d.get('user_name')}**: {d.get('text')}")
-                    if st.button("プロフィールを見る", key=f"view_{t.id}"):
+                    if st.button("見る", key=f"src_{t.id}"):
                         st.session_state.viewing_user_id = d.get('user_id')
                         st.session_state.current_page = "👤 マイページ"; st.rerun()
 
 elif page == "📢 お知らせ":
     if st.session_state.admin_mode_on:
-        with st.form("news_form"):
-            new_news = st.text_input("お知らせ内容")
-            if st.form_submit_button("配信"):
-                db.collection("news").add({"title": new_news, "date": firestore.SERVER_TIMESTAMP}); st.rerun()
-    
+        with st.form("news"):
+            nt = st.text_input("新規お知らせ")
+            if st.form_submit_button("送信"):
+                db.collection("news").add({"title": nt, "date": firestore.SERVER_TIMESTAMP}); st.rerun()
     for n in db.collection("news").order_by("date", direction=firestore.Query.DESCENDING).stream():
         st.info(n.to_dict().get('title'))
 
-elif page == "📝 プロフィール":
+elif page == "📝 設定":
     with st.form("prof"):
         n_name = st.text_input("表示名", value=st.session_state.user_name)
-        n_img = st.file_uploader("アイコン画像", type=["jpg", "png", "jpeg"])
+        n_img = st.file_uploader("アイコン", type=["jpg", "png", "jpeg"])
         if st.form_submit_button("保存"):
             upd = {"display_name": n_name}
             if n_img: upd["avatar_data"] = convert_image_to_base64(n_img, size=(200,200))
-            user_ref.update(upd); st.success("更新しました！"); st.rerun()
-    if st.button("ログアウト"): st.session_state.clear(); st.rerun()
+            user_ref.update(upd); st.success("更新！"); st.rerun()
+    if st.sidebar.button("ログアウト"): st.session_state.clear(); st.rerun()
+    if st.session_state.is_admin_user:
+        st.session_state.admin_mode_on = st.toggle("管理モード", value=st.session_state.admin_mode_on)
 
-st.markdown('</div>', unsafe_allow_html=True) # メインコンテンツ終了
+st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 6. ボトムナビゲーションバーのボタン配置 ---
+# --- 6. 固定ボトムナビゲーション ---
 st.markdown('<div class="fixed-footer">', unsafe_allow_html=True)
-f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns(5)
-with f_col1:
+b1, b2, b3, b4, b5 = st.columns(5)
+with b1:
     if st.button("🏠"): st.session_state.current_page = "🏠 ホーム"; st.session_state.viewing_user_id = None; st.rerun()
-with f_col2:
+with b2:
     if st.button("🔍"): st.session_state.current_page = "🔍 検索"; st.rerun()
-with f_col3:
+with b3:
     if st.button("👤"): 
         st.session_state.viewing_user_id = st.session_state.user_id
         st.session_state.current_page = "👤 マイページ"; st.rerun()
-with f_col4:
+with b4:
     if st.button("📢"): st.session_state.current_page = "📢 お知らせ"; st.rerun()
-with f_col5:
-    if st.button("📝"): st.session_state.current_page = "📝 プロフィール"; st.rerun()
+with b5:
+    if st.button("📝"): st.session_state.current_page = "📝 設定"; st.rerun()
 st.markdown('</div>', unsafe_allow_html=True)
