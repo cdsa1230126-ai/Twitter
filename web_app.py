@@ -12,52 +12,87 @@ from datetime import datetime
 ADMIN_EMAIL = "cdsa1230126@gn.iwasaki.ac.jp"
 st.set_page_config(page_title="Iwattar", page_icon=":bird:", layout="centered")
 
-# --- X風UI再現CSS（ボトムナビを最下部に強制固定） ---
+# --- UIレイアウト・ダークモード対応CSS ---
 st.markdown(
     """
     <style>
-    /* 全体フォントと余白 */
-    html, body, [class*="css"] { font-family: 'Noto Sans JP', sans-serif; }
+    /* 標準ヘッダーと余白の調整 */
+    .block-container {
+        padding-top: 0rem !important;
+        padding-bottom: 0rem !important;
+        max-width: 600px; /* スマホ風の幅に制限 */
+    }
+    header {visibility: hidden;} 
+
+    /* 背景色と文字色の自動対応 */
+    :root {
+        --text-color: inherit;
+    }
+
+    /* ページヘッダー（画面上部に固定） */
+    .page-header {
+        font-size: 20px;
+        font-weight: 800;
+        padding: 15px;
+        border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+        position: sticky;
+        top: 0;
+        background-color: var(--background-color);
+        z-index: 999;
+        color: var(--text-color);
+        display: flex;
+        align-items: center;
+    }
+
+    /* メインスクロールエリア */
+    .main-scroll-area {
+        margin-top: 0px;
+        padding-bottom: 120px; /* ボトムナビに被らないための余白 */
+    }
+
+    /* 投稿カード */
+    .tweet-card { 
+        display: flex; 
+        padding: 12px 16px; 
+        border-bottom: 1px solid rgba(128, 128, 128, 0.2); 
+        color: var(--text-color);
+    }
     
-    /* ボトムナビゲーションを画面の最下部に固定 */
+    .avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; margin-right: 12px; }
+    .display-name { font-weight: 700; font-size: 16px; color: var(--text-color); }
+    .tweet-text { font-size: 15px; line-height: 1.4; color: var(--text-color); opacity: 0.9; }
+
+    /* ボトムナビゲーション（画面最下部に固定） */
     .fixed-footer {
         position: fixed;
         bottom: 0;
         left: 0;
         width: 100%;
-        background-color: white;
-        border-top: 1px solid #EFF3F4;
+        background-color: var(--background-color);
+        border-top: 1px solid rgba(128, 128, 128, 0.2);
         padding: 10px 0;
         z-index: 999999;
-        display: block;
     }
     
-    /* ナビゲーションボタンのホバー効果 */
-    div.stButton > button:hover {
-        background-color: rgba(29, 155, 240, 0.1) !important;
-        border-radius: 50%;
+    /* ボタンの透明化とホバー設定 */
+    div.stButton > button {
+        background-color: transparent !important;
+        border: none !important;
+        color: var(--text-color) !important;
+        font-size: 22px !important;
+        width: 100%;
     }
-
-    /* メインコンテンツがナビに被らないように下に余白（100px）を空ける */
-    .main-container { margin-bottom: 100px; }
-
-    /* 投稿カードのデザイン */
-    .tweet-card { display: flex; padding: 12px 16px; border-bottom: 1px solid #EFF3F4; }
-    .avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; margin-right: 12px; }
-    .display-name { font-weight: 700; color: #0F1419; font-size: 15px; }
-    
-    /* サイドバー内のプロフィール */
-    .sidebar-profile { padding: 20px 0; border-bottom: 1px solid #EFF3F4; margin-bottom: 20px; }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# --- 1. Firebase初期化 ---
+# --- 1. Firebase初期化 (Secrets利用) ---
 if not firebase_admin._apps:
     try:
         fb_sec = st.secrets["firebase"]
         parts = fb_sec["raw_data"].split(",")
+        # 秘密鍵の整形
         raw_key = fb_sec["private_key"].replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "")
         pure_key = re.sub(r"[^A-Za-z0-9+/=]", "", raw_key)
         formatted_content = "\n".join(textwrap.wrap(pure_key, 64))
@@ -89,53 +124,57 @@ def image_to_base64(file):
 # --- 3. セッション管理 ---
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "current_page" not in st.session_state: st.session_state.current_page = "Home"
-if "is_admin" not in st.session_state: st.session_state.is_admin = False
 
-# ログインチェック
+# ログイン・会員登録
 if not st.session_state.logged_in:
     st.title("Iwattar")
-    with st.form("login"):
-        e = st.text_input("メールアドレス")
-        p = st.text_input("パスワード", type="password")
-        if st.form_submit_button("ログイン"):
-            try:
-                u = auth.get_user_by_email(e)
-                st.session_state.logged_in, st.session_state.user_id = True, u.uid
-                st.session_state.is_admin = (e.strip() == ADMIN_EMAIL.strip())
-                st.rerun()
-            except: st.error("ログイン失敗")
+    tab_l, tab_s = st.tabs(["ログイン", "新規登録"])
+    with tab_l:
+        with st.form("login_f"):
+            e = st.text_input("メール"); p = st.text_input("パスワード", type="password")
+            if st.form_submit_button("ログイン"):
+                try:
+                    u = auth.get_user_by_email(e)
+                    st.session_state.logged_in, st.session_state.user_id = True, u.uid
+                    st.rerun()
+                except: st.error("失敗しました")
+    with tab_s:
+        with st.form("signup_f"):
+            ne = st.text_input("メールアドレス"); np = st.text_input("パスワード"); nn = st.text_input("表示名")
+            if st.form_submit_button("登録"):
+                try:
+                    user = auth.create_user(email=ne, password=np, display_name=nn)
+                    db.collection('users').document(user.uid).set({"display_name": nn, "avatar": None})
+                    st.success("完了！ログインしてください")
+                except Exception as ex: st.error(f"エラー: {ex}")
     st.stop()
 
-# ユーザー情報取得
+# ユーザーデータ取得
 u_ref = db.collection('users').document(st.session_state.user_id)
 u_data = u_ref.get().to_dict() or {}
 st.session_state.user_name = u_data.get('display_name', "Guest")
 st.session_state.avatar = u_data.get('avatar')
 
-# --- 4. サイドドロワー（左上のメニュー） ---
+# --- 4. サイドドロワー ---
 with st.sidebar:
-    st.markdown('<div class="sidebar-profile">', unsafe_allow_html=True)
-    st.image(st.session_state.avatar or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png", width=64)
+    st.image(st.session_state.avatar or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png", width=80)
     st.markdown(f"### {st.session_state.user_name}")
-    st.caption(f"@{st.session_state.user_id[:8]}")
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    if st.button("🚪 ログアウト"): 
-        st.session_state.logged_in = False; st.rerun()
+    st.caption(f"ID: {st.session_state.user_id[:8]}")
+    st.markdown("---")
+    if st.button("🚪 ログアウト"): st.session_state.logged_in = False; st.rerun()
 
-# --- 5. メイン表示エリア (画面切り替え) ---
-st.markdown('<div class="main-container">', unsafe_allow_html=True)
+# --- 5. メイン画面表示 ---
+st.markdown('<div class="main-scroll-area">', unsafe_allow_html=True)
 
-# 【Home画面】
+# 【ホーム画面】
 if st.session_state.current_page == "Home":
-    st.title("ホーム")
-    # 投稿フォーム
+    st.markdown('<div class="page-header">ホーム</div>', unsafe_allow_html=True)
     with st.container():
-        c1, c2 = st.columns([1, 6])
+        c1, c2 = st.columns([1, 5])
         with c1: st.markdown(f'<img src="{st.session_state.avatar or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"}" class="avatar">', unsafe_allow_html=True)
         with c2:
-            txt = st.text_area("", placeholder="いまどうしてる？", key="tweet_input", label_visibility="collapsed")
-            img_file = st.file_uploader("画像選択", type=["jpg", "png"], label_visibility="collapsed")
+            txt = st.text_area("", placeholder="いまどうしてる？", key="tw_in", label_visibility="collapsed")
+            img_file = st.file_uploader("画像", type=["jpg", "png"], label_visibility="collapsed")
             if st.button("ポストする"):
                 if txt.strip():
                     db.collection("tweets").add({
@@ -144,7 +183,6 @@ if st.session_state.current_page == "Home":
                         "image": image_to_base64(img_file), "created_at": firestore.SERVER_TIMESTAMP
                     }); st.rerun()
     st.markdown("---")
-    # タイムライン
     tweets = db.collection("tweets").order_by("created_at", direction=firestore.Query.DESCENDING).limit(20).stream()
     for doc in tweets:
         d = doc.to_dict()
@@ -152,47 +190,48 @@ if st.session_state.current_page == "Home":
         <div class="tweet-card">
             <img src="{d.get('avatar') or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"}" class="avatar">
             <div style="flex:1;">
-                <div><span class="display-name">{d.get('user_name')}</span></div>
-                <div style="color:#0F1419;">{d.get('text')}</div>
+                <div class="display-name">{d.get('user_name')}</div>
+                <div class="tweet-text">{d.get('text')}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
         if d.get("image"): st.image(d.get("image"), use_container_width=True)
 
-# 【Search画面】
+# 【探索画面】
 elif st.session_state.current_page == "Search":
-    st.title("検索")
-    st.text_input("キーワード検索", placeholder="ゼミや話題を検索...")
+    st.markdown('<div class="page-header">探索</div>', unsafe_allow_html=True)
+    st.text_input("キーワード検索", placeholder="ゼミやキーワードを入力")
+    st.info("トレンド機能は開発中です")
 
-# 【Notifications画面】
+# 【通知画面】
 elif st.session_state.current_page == "Notifications":
-    st.title("通知")
-    st.info("新しい通知はありません。")
+    st.markdown('<div class="page-header">通知</div>', unsafe_allow_html=True)
+    st.info("現在、新しい通知はありません")
 
-# 【Profile画面（アイコン変更専用）】
+# 【プロフィール設定画面】
 elif st.session_state.current_page == "Profile":
-    st.title("プロフィール設定")
-    st.image(st.session_state.avatar or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png", width=120)
+    st.markdown('<div class="page-header">プロフィール設定</div>', unsafe_allow_html=True)
+    st.image(st.session_state.avatar or "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png", width=100)
     new_name = st.text_input("名前", value=st.session_state.user_name)
-    new_avatar_file = st.file_uploader("アイコン画像を変更", type=["jpg", "png"])
-    if st.button("変更を保存"):
+    new_avatar = st.file_uploader("アイコン画像をアップロード", type=["jpg", "png"])
+    if st.button("設定を保存"):
         upd = {"display_name": new_name}
-        if new_avatar_file:
-            upd["avatar"] = image_to_base64(new_avatar_file)
-        u_ref.update(upd); st.success("保存完了！"); st.rerun()
+        if new_avatar: upd["avatar"] = image_to_base64(new_avatar)
+        u_ref.update(upd)
+        st.success("更新しました！")
+        st.rerun()
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- 6. ボトムナビゲーション (最下部に固定) ---
-# コンテナを作り、そこにボタンを配置
+# --- 6. ボトムナビゲーション (画面最下部に固定) ---
 st.markdown('<div class="fixed-footer">', unsafe_allow_html=True)
-nav_col1, nav_col2, nav_col3, nav_col4 = st.columns(4)
-with nav_col1:
-    if st.button("🏠", key="nav_home"): st.session_state.current_page = "Home"; st.rerun()
-with nav_col2:
-    if st.button("🔍", key="nav_search"): st.session_state.current_page = "Search"; st.rerun()
-with nav_col3:
-    if st.button("🔔", key="nav_noti"): st.session_state.current_page = "Notifications"; st.rerun()
-with nav_col4:
-    if st.button("👤", key="nav_prof"): st.session_state.current_page = "Profile"; st.rerun()
+n_col1, n_col2, n_col3, n_col4 = st.columns(4)
+with n_col1:
+    if st.button("🏠", key="nav1"): st.session_state.current_page = "Home"; st.rerun()
+with n_col2:
+    if st.button("🔍", key="nav2"): st.session_state.current_page = "Search"; st.rerun()
+with n_col3:
+    if st.button("🔔", key="nav3"): st.session_state.current_page = "Notifications"; st.rerun()
+with n_col4:
+    if st.button("👤", key="nav4"): st.session_state.current_page = "Profile"; st.rerun()
 st.markdown('</div>', unsafe_allow_html=True)
