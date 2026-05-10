@@ -102,11 +102,26 @@ header{
     position:fixed;
     bottom:0;
     left:0;
+    right:0;
     width:100%;
-    background-color:var(--background-color);
+    background:var(--background-color);
     border-top:1px solid rgba(128,128,128,0.2);
-    padding:8px 0;
+    padding:10px 0;
     z-index:999999;
+
+    backdrop-filter: blur(10px);
+}
+            
+            div[data-testid="stHorizontalBlock"]{
+    position:fixed;
+    bottom:10px;
+    left:50%;
+    transform:translateX(-50%);
+    width:600px;
+    max-width:100%;
+    background:var(--background-color);
+    z-index:999999;
+    padding-top:10px;
 }
 
 .comment-card{
@@ -922,51 +937,25 @@ elif st.session_state.current_page == "DM":
 # ============================================================
 # ボトムナビ
 # ============================================================
-st.markdown(
-    "</div>",
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    '<div class="fixed-footer">',
-    unsafe_allow_html=True
-)
 
 n1, n2, n3, n4 = st.columns(4)
 
 with n1:
-
     if st.button("🏠", key="nav_home"):
-
         st.session_state.current_page = "Home"
-
         st.rerun()
 
 with n2:
-
     if st.button("🔍", key="nav_search"):
-
         st.session_state.current_page = "Search"
-
         st.rerun()
 
 with n3:
-
     if st.button("🔔", key="nav_notif"):
-
         st.session_state.current_page = "Notifications"
-
         st.rerun()
 
 with n4:
-
     if st.button("✉️", key="nav_dm"):
-
         st.session_state.current_page = "DM"
-
         st.rerun()
-
-st.markdown(
-    "</div>",
-    unsafe_allow_html=True
-)
