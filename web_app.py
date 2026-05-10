@@ -3,6 +3,7 @@
 # ============================================================
 import streamlit as st
 import firebase_admin
+import hashlib
 
 from firebase_admin import (
     credentials,
@@ -299,6 +300,33 @@ def image_to_base64(file):
 
         st.error("画像の読み込みに失敗しました")
         return None
+    
+    # ============================================================
+# パスワードハッシュ化
+# ============================================================
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# ============================================================
+# ログイン認証
+# ============================================================
+def verify_login(email, password):
+
+    user_id = email.replace("@", "_").replace(".", "_")
+
+    doc = db.collection("users").document(user_id).get()
+
+    if not doc.exists:
+        return None
+
+    user_data = doc.to_dict()
+
+    hashed_input = hash_password(password)
+
+    if user_data.get("password") == hashed_input:
+        return user_id
+
+    return None
 
 # ============================================================
 # セッション
