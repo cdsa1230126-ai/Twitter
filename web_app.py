@@ -106,23 +106,23 @@ header{
     word-break:break-word;
 }
 
-/* 下ナビ */
-.bottom-nav{
-    position:fixed;
-    bottom:0;
-    left:0;
-    width:100%;
-    background:white;
-    border-top:1px solid rgba(0,0,0,0.1);
-    padding:8px 0;
-    z-index:999999;
+/* 下ナビ (Streamlitの仕様に合わせた固定化) */
+div[data-testid="stHorizontalBlock"]:has(#nav-marker) {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: white;
+    border-top: 1px solid rgba(0,0,0,0.1);
+    padding: 8px 0;
+    z-index: 999999;
 }
 
-.bottom-nav button{
-    width:100%;
-    border:none !important;
-    background:transparent !important;
-    font-size:24px !important;
+div[data-testid="stHorizontalBlock"]:has(#nav-marker) button {
+    width: 100%;
+    border: none !important;
+    background: transparent !important;
+    font-size: 24px !important;
 }
 
 /* アイコン */
@@ -719,46 +719,27 @@ st.markdown(
 # ============================================================
 # ボトムナビ
 # ============================================================
-st.markdown(
-    '<div class="bottom-nav">',
-    unsafe_allow_html=True
-)
-
 n1, n2, n3, n4 = st.columns(4)
 
 with n1:
-
+    # CSSでこのブロック全体を特定するための見えないマーカー
+    st.markdown('<span id="nav-marker"></span>', unsafe_allow_html=True)
+    
     if st.button("🏠", key="nav_home"):
-
         st.session_state.current_page = "Home"
-
         st.rerun()
 
 with n2:
-
     if st.button("🔍", key="nav_search"):
-
         st.session_state.current_page = "Search"
-
         st.rerun()
 
 with n3:
-
     if st.button("🔔", key="nav_notif"):
-
         st.session_state.current_page = "Notifications"
-
         st.rerun()
 
 with n4:
-
     if st.button("✉️", key="nav_dm"):
-
         st.session_state.current_page = "DM"
-
         st.rerun()
-
-st.markdown(
-    "</div>",
-    unsafe_allow_html=True
-)
