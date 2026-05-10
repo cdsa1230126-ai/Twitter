@@ -1,19 +1,33 @@
+# ============================================================
+# import
+# ============================================================
 import streamlit as st
 import firebase_admin
-from firebase_admin import credentials, firestore, auth
-import streamlit_authenticator as stauth
+
+from firebase_admin import (
+    credentials,
+    firestore,
+    auth
+)
+
 import base64
 import re
 import textwrap
-from io import BytesIO
-from PIL import Image
+import hashlib
 import html
 
+from io import BytesIO
+from PIL import Image
+
 # ============================================================
-# 0. 基本設定
+# 基本設定
 # ============================================================
 ADMIN_EMAIL = "cdsa1230126@gn.iwasaki.ac.jp"
-DEFAULT_AVATAR = "https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png"
+
+DEFAULT_AVATAR = (
+    "https://abs.twimg.com/sticky/"
+    "default_profile_images/default_profile_normal.png"
+)
 
 st.set_page_config(
     page_title="Iwattar",
@@ -27,84 +41,91 @@ st.set_page_config(
 st.markdown("""
 <style>
 
-.block-container {
-    padding-top: 0rem !important;
-    padding-bottom: 0rem !important;
-    max-width: 600px;
+.block-container{
+    padding-top:0rem !important;
+    padding-bottom:0rem !important;
+    max-width:600px;
 }
 
-header {
-    visibility: hidden;
+header{
+    visibility:hidden;
 }
 
-.main-scroll-area {
-    padding-bottom: 130px;
+.main-scroll-area{
+    padding-bottom:130px;
 }
 
-.page-header {
-    font-size: 20px;
-    font-weight: 800;
-    padding: 14px 16px;
-    border-bottom: 1px solid rgba(128,128,128,0.2);
-    position: sticky;
-    top: 0;
-    background-color: var(--background-color);
-    z-index: 999;
+.page-header{
+    font-size:20px;
+    font-weight:800;
+    padding:14px 16px;
+    border-bottom:1px solid rgba(128,128,128,0.2);
+    position:sticky;
+    top:0;
+    background-color:var(--background-color);
+    z-index:999;
 }
 
-.avatar {
+.avatar{
     width:48px;
     height:48px;
     border-radius:50%;
     object-fit:cover;
 }
 
-.avatar-sm {
+.avatar-sm{
     width:36px;
     height:36px;
     border-radius:50%;
     object-fit:cover;
 }
 
-.display-name {
+.display-name{
     font-weight:700;
     font-size:15px;
 }
 
-.screen-name {
+.screen-name{
     font-size:13px;
     opacity:.55;
 }
 
-.tweet-text {
+.tweet-text{
     font-size:15px;
     line-height:1.5;
     margin-top:4px;
+    word-break:break-word;
 }
 
-.fixed-footer {
+.fixed-footer{
     position:fixed;
     bottom:0;
     left:0;
     width:100%;
-    background-color: var(--background-color);
+    background-color:var(--background-color);
     border-top:1px solid rgba(128,128,128,0.2);
     padding:8px 0;
     z-index:999999;
 }
 
-div.stButton > button {
-    width:100%;
-}
-
-.comment-card {
+.comment-card{
     display:flex;
     gap:10px;
     padding:10px 0;
     border-bottom:1px solid rgba(128,128,128,0.1);
 }
 
-.dm-bubble-me {
+.icon-preview{
+    width:80px;
+    height:80px;
+    border-radius:50%;
+    object-fit:cover;
+    border:3px solid #1d9bf0;
+    display:block;
+    margin:0 auto 12px;
+}
+
+.dm-bubble-me{
     background:#1d9bf0;
     color:#fff;
     border-radius:18px 18px 4px 18px;
@@ -115,23 +136,13 @@ div.stButton > button {
     word-break:break-word;
 }
 
-.dm-bubble-other {
+.dm-bubble-other{
     background:rgba(128,128,128,0.15);
     border-radius:18px 18px 18px 4px;
     padding:8px 14px;
     margin:4px 0;
     max-width:75%;
     word-break:break-word;
-}
-
-.icon-preview {
-    width:80px;
-    height:80px;
-    border-radius:50%;
-    object-fit:cover;
-    border:3px solid #1d9bf0;
-    display:block;
-    margin:0 auto 12px;
 }
 
 </style>
@@ -148,11 +159,17 @@ if not firebase_admin._apps:
 
         parts = fb_sec["raw_data"].split(",")
 
-        raw_key = fb_sec["private_key"] \
-            .replace("-----BEGIN PRIVATE KEY-----", "") \
+        raw_key = (
+            fb_sec["private_key"]
+            .replace("-----BEGIN PRIVATE KEY-----", "")
             .replace("-----END PRIVATE KEY-----", "")
+        )
 
-        pure_key = re.sub(r"[^A-Za-z0-9+/=]", "", raw_key)
+        pure_key = re.sub(
+            r"[^A-Za-z0-9+/=]",
+            "",
+            raw_key
+        )
 
         fixed_key = (
             "-----BEGIN PRIVATE KEY-----\n"
@@ -167,9 +184,12 @@ if not firebase_admin._apps:
             "private_key": fixed_key,
             "client_email": parts[2],
             "client_id": parts[3],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "auth_uri":
+                "https://accounts.google.com/o/oauth2/auth",
+            "token_uri":
+                "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url":
+                "https://www.googleapis.com/oauth2/v1/certs",
             "client_x509_cert_url":
                 f"https://www.googleapis.com/robot/v1/metadata/x509/{parts[2]}",
             "universe_domain": "googleapis.com"
@@ -190,32 +210,27 @@ db = firestore.client()
 # 共通関数
 # ============================================================
 def safe_text(text):
+
     return html.escape(str(text))
 
 
-def avatar_html(url, cls="avatar"):
-    return f'<img src="{url or DEFAULT_AVATAR}" class="{cls}">'
-
-
-def get_user(uid):
-
-    doc = db.collection("users").document(uid).get()
-
-    if doc.exists:
-        return doc.to_dict()
-
-    return {}
-
-
 def hash_password(password):
-    return stauth.Hasher([password]).generate()[0]
+
+    return hashlib.sha256(
+        password.encode()
+    ).hexdigest()
 
 
 def verify_login(email, password):
 
-    user_id = email.replace("@", "_").replace(".", "_")
+    user_id = (
+        email
+        .replace("@", "_")
+        .replace(".", "_")
+    )
 
-    doc = db.collection("users").document(user_id).get()
+    doc = db.collection("users") \
+        .document(user_id).get()
 
     if not doc.exists:
         return None
@@ -224,10 +239,33 @@ def verify_login(email, password):
 
     stored_pw = user_data.get("password")
 
-    if stauth.Hasher([password]).check_pw(password, stored_pw):
+    input_pw = hashlib.sha256(
+        password.encode()
+    ).hexdigest()
+
+    if input_pw == stored_pw:
         return user_id
 
     return None
+
+
+def avatar_html(url, cls="avatar"):
+
+    return (
+        f'<img src="{url or DEFAULT_AVATAR}" '
+        f'class="{cls}">'
+    )
+
+
+def get_user(uid):
+
+    doc = db.collection("users") \
+        .document(uid).get()
+
+    if doc.exists:
+        return doc.to_dict()
+
+    return {}
 
 
 def image_to_base64(file):
@@ -235,11 +273,12 @@ def image_to_base64(file):
     if not file:
         return None
 
-    if file.size > 2 * 1024 * 1024:
-        st.error("画像サイズは2MB以下にしてください")
-        return None
-
     try:
+
+        if file.size > 2 * 1024 * 1024:
+
+            st.error("画像サイズは2MB以下にしてください")
+            return None
 
         img = Image.open(file)
 
@@ -251,22 +290,27 @@ def image_to_base64(file):
 
         return (
             "data:image/png;base64,"
-            + base64.b64encode(buf.getvalue()).decode()
+            + base64.b64encode(
+                buf.getvalue()
+            ).decode()
         )
 
     except Exception:
+
         st.error("画像の読み込みに失敗しました")
         return None
 
 # ============================================================
-# セッション初期化
+# セッション
 # ============================================================
 defaults = {
+
     "logged_in": False,
     "current_page": "Home",
     "view_tweet_id": None,
     "view_profile_uid": None,
     "dm_partner_uid": None
+
 }
 
 for k, v in defaults.items():
@@ -275,18 +319,21 @@ for k, v in defaults.items():
         st.session_state[k] = v
 
 # ============================================================
-# 認証画面
+# ログイン画面
 # ============================================================
 if not st.session_state.logged_in:
 
     st.title("🐦 Iwattar")
 
-    tab_l, tab_s = st.tabs(["ログイン", "新規登録"])
+    tab_login, tab_signup = st.tabs([
+        "ログイン",
+        "新規登録"
+    ])
 
-    # --------------------------------------------------------
+    # ========================================================
     # ログイン
-    # --------------------------------------------------------
-    with tab_l:
+    # ========================================================
+    with tab_login:
 
         with st.form("login_form"):
 
@@ -299,7 +346,10 @@ if not st.session_state.logged_in:
 
             if st.form_submit_button("ログイン"):
 
-                uid = verify_login(email, password)
+                uid = verify_login(
+                    email,
+                    password
+                )
 
                 if uid:
 
@@ -310,12 +360,14 @@ if not st.session_state.logged_in:
 
                 else:
 
-                    st.error("メールまたはパスワードが違います")
+                    st.error(
+                        "メールまたはパスワードが違います"
+                    )
 
-    # --------------------------------------------------------
+    # ========================================================
     # 新規登録
-    # --------------------------------------------------------
-    with tab_s:
+    # ========================================================
+    with tab_signup:
 
         with st.form("signup_form"):
 
@@ -335,47 +387,83 @@ if not st.session_state.logged_in:
                 try:
 
                     if len(new_password) < 6:
-                        st.error("パスワードは6文字以上にしてください")
+
+                        st.error(
+                            "パスワードは6文字以上にしてください"
+                        )
+
                         st.stop()
 
-                    if not re.match(r"^[a-zA-Z0-9_]+$", new_handle):
-                        st.error("ハンドル名は英数字と _ のみ使用可能です")
+                    if not re.match(
+                        r"^[a-zA-Z0-9_]+$",
+                        new_handle
+                    ):
+
+                        st.error(
+                            "ハンドル名は英数字と _ のみ使用できます"
+                        )
+
                         st.stop()
 
-                    user_id = new_email \
-                        .replace("@", "_") \
+                    user_id = (
+                        new_email
+                        .replace("@", "_")
                         .replace(".", "_")
+                    )
 
-                    if db.collection("users") \
-                            .document(user_id).get().exists:
+                    user_doc = db.collection("users") \
+                        .document(user_id).get()
 
-                        st.error("このメールは既に登録されています")
+                    if user_doc.exists:
+
+                        st.error(
+                            "このメールは既に登録されています"
+                        )
+
                         st.stop()
 
                     existing = db.collection("users") \
-                        .where("handle", "==", new_handle).stream()
+                        .where(
+                            "handle",
+                            "==",
+                            new_handle
+                        ).stream()
 
                     if any(existing):
 
-                        st.error("そのハンドル名は既に使われています")
+                        st.error(
+                            "そのハンドル名は既に使われています"
+                        )
+
                         st.stop()
 
-                    hashed_pw = hash_password(new_password)
+                    db.collection("users") \
+                        .document(user_id).set({
 
-                    db.collection("users").document(user_id).set({
+                            "display_name":
+                                safe_text(new_name),
 
-                        "display_name": safe_text(new_name),
-                        "handle": safe_text(new_handle),
-                        "avatar": None,
-                        "bio": "",
-                        "followers": [],
-                        "following": [],
-                        "email": new_email,
-                        "password": hashed_pw
+                            "handle":
+                                safe_text(new_handle),
 
-                    })
+                            "avatar": None,
 
-                    st.success("登録完了！ログインしてください")
+                            "bio": "",
+
+                            "followers": [],
+
+                            "following": [],
+
+                            "email": new_email,
+
+                            "password":
+                                hash_password(new_password)
+
+                        })
+
+                    st.success(
+                        "登録完了！ログインしてください"
+                    )
 
                 except Exception as ex:
 
@@ -384,11 +472,10 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ============================================================
-# ログインユーザー情報
+# ログインユーザー
 # ============================================================
-me_ref = db.collection("users").document(
-    st.session_state.user_id
-)
+me_ref = db.collection("users") \
+    .document(st.session_state.user_id)
 
 me = me_ref.get().to_dict() or {}
 
@@ -406,9 +493,16 @@ with st.sidebar:
     st.markdown(
         f"""
         <center>
-            <img src="{MY_AVATAR or DEFAULT_AVATAR}" class="icon-preview">
+
+            <img
+                src="{MY_AVATAR or DEFAULT_AVATAR}"
+                class="icon-preview"
+            >
+
             <h3>{safe_text(MY_NAME)}</h3>
+
             <p>@{safe_text(MY_HANDLE)}</p>
+
         </center>
         """,
         unsafe_allow_html=True
@@ -441,7 +535,7 @@ with st.sidebar:
 
     with st.expander("プロフィール編集"):
 
-        with st.form("profile_edit_form"):
+        with st.form("profile_form"):
 
             edit_name = st.text_input(
                 "表示名",
@@ -458,7 +552,7 @@ with st.sidebar:
                 value=me.get("bio", "")
             )
 
-            new_avatar = st.file_uploader(
+            avatar_file = st.file_uploader(
                 "アイコン画像",
                 type=["jpg", "jpeg", "png"]
             )
@@ -466,19 +560,29 @@ with st.sidebar:
             if st.form_submit_button("保存"):
 
                 update_data = {
-                    "display_name": safe_text(edit_name),
-                    "handle": safe_text(edit_handle),
-                    "bio": safe_text(edit_bio)
+
+                    "display_name":
+                        safe_text(edit_name),
+
+                    "handle":
+                        safe_text(edit_handle),
+
+                    "bio":
+                        safe_text(edit_bio)
+
                 }
 
-                avatar_b64 = image_to_base64(new_avatar)
+                avatar_b64 = image_to_base64(
+                    avatar_file
+                )
 
                 if avatar_b64:
                     update_data["avatar"] = avatar_b64
 
                 me_ref.update(update_data)
 
-                st.success("プロフィール更新完了")
+                st.success("更新しました")
+
                 st.rerun()
 
     st.markdown("---")
@@ -491,7 +595,7 @@ with st.sidebar:
         st.rerun()
 
 # ============================================================
-# 投稿描画
+# 投稿表示
 # ============================================================
 def render_tweet(doc_id, d):
 
@@ -526,55 +630,61 @@ def render_tweet(doc_id, d):
         )
 
         if d.get("image"):
-            st.image(d["image"], use_container_width=True)
 
-        a1, a2, a3 = st.columns(3)
+            st.image(
+                d["image"],
+                use_container_width=True
+            )
+
+        a1, a2 = st.columns(2)
 
         with a1:
 
-            liked = st.session_state.user_id in likes
+            liked = (
+                st.session_state.user_id in likes
+            )
 
             if st.button(
                 f"{'❤️' if liked else '🤍'} {len(likes)}",
                 key=f"like_{doc_id}"
             ):
 
-                ref = db.collection("tweets").document(doc_id)
+                ref = db.collection("tweets") \
+                    .document(doc_id)
 
                 if liked:
 
                     ref.update({
+
                         "likes":
-                            firestore.ArrayRemove(
-                                [st.session_state.user_id]
-                            )
+                            firestore.ArrayRemove([
+                                st.session_state.user_id
+                            ])
+
                     })
 
                 else:
 
                     ref.update({
+
                         "likes":
-                            firestore.ArrayUnion(
-                                [st.session_state.user_id]
-                            )
+                            firestore.ArrayUnion([
+                                st.session_state.user_id
+                            ])
+
                     })
 
                 st.rerun()
 
         with a2:
 
-            if st.button("💬", key=f"comment_{doc_id}"):
+            if d.get("user_id") == \
+                    st.session_state.user_id:
 
-                st.session_state.view_tweet_id = doc_id
-                st.session_state.current_page = "TweetDetail"
-
-                st.rerun()
-
-        with a3:
-
-            if d.get("user_id") == st.session_state.user_id:
-
-                if st.button("🗑️", key=f"delete_{doc_id}"):
+                if st.button(
+                    "🗑️",
+                    key=f"delete_{doc_id}"
+                ):
 
                     db.collection("tweets") \
                         .document(doc_id).delete()
@@ -592,7 +702,7 @@ st.markdown(
 )
 
 # ============================================================
-# HOME
+# ホーム
 # ============================================================
 if st.session_state.current_page == "Home":
 
@@ -601,7 +711,10 @@ if st.session_state.current_page == "Home":
         unsafe_allow_html=True
     )
 
-    with st.form("post_form", clear_on_submit=True):
+    with st.form(
+        "post_form",
+        clear_on_submit=True
+    ):
 
         post_text = st.text_area(
             "",
@@ -620,14 +733,28 @@ if st.session_state.current_page == "Home":
 
                 db.collection("tweets").add({
 
-                    "text": safe_text(post_text),
-                    "user_name": MY_NAME,
-                    "handle": MY_HANDLE,
-                    "user_id": st.session_state.user_id,
-                    "avatar": MY_AVATAR,
-                    "image": image_to_base64(post_image),
+                    "text":
+                        safe_text(post_text),
+
+                    "user_name":
+                        MY_NAME,
+
+                    "handle":
+                        MY_HANDLE,
+
+                    "user_id":
+                        st.session_state.user_id,
+
+                    "avatar":
+                        MY_AVATAR,
+
+                    "image":
+                        image_to_base64(post_image),
+
                     "likes": [],
-                    "created_at": firestore.SERVER_TIMESTAMP
+
+                    "created_at":
+                        firestore.SERVER_TIMESTAMP
 
                 })
 
@@ -651,7 +778,7 @@ if st.session_state.current_page == "Home":
         )
 
 # ============================================================
-# SEARCH
+# 探索
 # ============================================================
 elif st.session_state.current_page == "Search":
 
@@ -666,76 +793,82 @@ elif st.session_state.current_page == "Search":
 
         users = db.collection("users").stream()
 
-        results = []
-
         for u in users:
 
             ud = u.to_dict()
 
-            if query.lower() in ud.get(
-                "display_name", ""
-            ).lower() or query.lower() in ud.get(
-                "handle", ""
-            ).lower():
+            if (
+                query.lower() in
+                ud.get("display_name", "").lower()
+            ) or (
+                query.lower() in
+                ud.get("handle", "").lower()
+            ):
 
-                results.append((u.id, ud))
+                if u.id == st.session_state.user_id:
+                    continue
 
-        for uid, ud in results:
+                c1, c2, c3 = st.columns([1, 4, 2])
 
-            if uid == st.session_state.user_id:
-                continue
+                with c1:
 
-            c1, c2, c3 = st.columns([1, 4, 2])
+                    st.markdown(
+                        avatar_html(
+                            ud.get("avatar"),
+                            "avatar-sm"
+                        ),
+                        unsafe_allow_html=True
+                    )
 
-            with c1:
+                with c2:
 
-                st.markdown(
-                    avatar_html(
-                        ud.get("avatar"),
-                        "avatar-sm"
-                    ),
-                    unsafe_allow_html=True
-                )
+                    st.write(
+                        f"**{safe_text(ud.get('display_name',''))}**"
+                    )
 
-            with c2:
+                    st.caption(
+                        f"@{safe_text(ud.get('handle',''))}"
+                    )
 
-                st.write(
-                    f"**{safe_text(ud.get('display_name',''))}**"
-                )
+                with c3:
 
-                st.caption(
-                    f"@{safe_text(ud.get('handle',''))}"
-                )
+                    following = (
+                        u.id in MY_FOLLOWING
+                    )
 
-            with c3:
+                    if st.button(
+                        "解除" if following else "フォロー",
+                        key=f"follow_{u.id}"
+                    ):
 
-                following = uid in MY_FOLLOWING
+                        if following:
 
-                if st.button(
-                    "解除" if following else "フォロー",
-                    key=f"follow_{uid}"
-                ):
+                            me_ref.update({
 
-                    if following:
+                                "following":
+                                    firestore.ArrayRemove([
+                                        u.id
+                                    ])
 
-                        me_ref.update({
-                            "following":
-                                firestore.ArrayRemove([uid])
-                        })
+                            })
 
-                    else:
+                        else:
 
-                        me_ref.update({
-                            "following":
-                                firestore.ArrayUnion([uid])
-                        })
+                            me_ref.update({
 
-                    st.rerun()
+                                "following":
+                                    firestore.ArrayUnion([
+                                        u.id
+                                    ])
 
-            st.markdown("---")
+                            })
+
+                        st.rerun()
+
+                st.markdown("---")
 
 # ============================================================
-# NOTIFICATIONS
+# 通知
 # ============================================================
 elif st.session_state.current_page == "Notifications":
 
@@ -744,7 +877,7 @@ elif st.session_state.current_page == "Notifications":
         unsafe_allow_html=True
     )
 
-    st.info("通知機能は実装済みです")
+    st.info("通知機能")
 
 # ============================================================
 # DM
@@ -756,100 +889,15 @@ elif st.session_state.current_page == "DM":
         unsafe_allow_html=True
     )
 
-    st.info("DM機能は利用可能です")
-
-# ============================================================
-# Tweet Detail
-# ============================================================
-elif st.session_state.current_page == "TweetDetail":
-
-    tweet_id = st.session_state.view_tweet_id
-
-    if not tweet_id:
-
-        st.session_state.current_page = "Home"
-        st.rerun()
-
-    tweet_doc = db.collection("tweets") \
-        .document(tweet_id).get()
-
-    if not tweet_doc.exists:
-
-        st.error("投稿が見つかりません")
-        st.stop()
-
-    tweet_data = tweet_doc.to_dict()
-
-    render_tweet(tweet_id, tweet_data)
-
-    st.markdown("### コメント")
-
-    with st.form("comment_form", clear_on_submit=True):
-
-        comment_text = st.text_input(
-            "",
-            placeholder="返信する...",
-            label_visibility="collapsed"
-        )
-
-        if st.form_submit_button("送信"):
-
-            if comment_text.strip():
-
-                db.collection("tweets") \
-                    .document(tweet_id) \
-                    .collection("comments") \
-                    .add({
-
-                        "text": safe_text(comment_text),
-                        "user_name": MY_NAME,
-                        "handle": MY_HANDLE,
-                        "avatar": MY_AVATAR,
-                        "user_id": st.session_state.user_id,
-                        "created_at":
-                            firestore.SERVER_TIMESTAMP
-
-                    })
-
-                st.rerun()
-
-    comments = db.collection("tweets") \
-        .document(tweet_id) \
-        .collection("comments") \
-        .order_by("created_at") \
-        .stream()
-
-    for c in comments:
-
-        cd = c.to_dict()
-
-        st.markdown(
-            f"""
-            <div class="comment-card">
-
-                {avatar_html(cd.get("avatar"), "avatar-sm")}
-
-                <div>
-                    <b>{safe_text(cd.get("user_name",""))}</b><br>
-
-                    <span class="screen-name">
-                        @{safe_text(cd.get("handle",""))}
-                    </span>
-
-                    <br>
-
-                    {safe_text(cd.get("text",""))}
-                </div>
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+    st.info("DM機能")
 
 # ============================================================
 # ボトムナビ
 # ============================================================
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown(
+    "</div>",
+    unsafe_allow_html=True
+)
 
 st.markdown(
     '<div class="fixed-footer">',
@@ -861,25 +909,36 @@ n1, n2, n3, n4 = st.columns(4)
 with n1:
 
     if st.button("🏠", key="nav_home"):
+
         st.session_state.current_page = "Home"
+
         st.rerun()
 
 with n2:
 
     if st.button("🔍", key="nav_search"):
+
         st.session_state.current_page = "Search"
+
         st.rerun()
 
 with n3:
 
     if st.button("🔔", key="nav_notif"):
+
         st.session_state.current_page = "Notifications"
+
         st.rerun()
 
 with n4:
 
     if st.button("✉️", key="nav_dm"):
+
         st.session_state.current_page = "DM"
+
         st.rerun()
 
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown(
+    "</div>",
+    unsafe_allow_html=True
+)
